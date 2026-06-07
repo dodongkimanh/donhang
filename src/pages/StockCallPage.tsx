@@ -29,7 +29,7 @@ interface StockCallNote {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function isOutOfStock(item: OrderItem): boolean {
-  const productQty = (item.product as Record<string, unknown>)?.quantity as number | undefined
+  const productQty = item.product?.quantity
   return productQty !== undefined && item.quantity > productQty
 }
 
@@ -486,9 +486,9 @@ export function StockCallPage() {
                                 >
                                   <td className="py-1 pr-1 text-gray-300 w-3 align-top">✓</td>
                                   <td className={`py-1 leading-snug ${oos ? 'text-red-600' : 'text-gray-900'}`}>
-                                    {(item.product as Record<string, unknown>)?.product_code && (
+                                    {item.product?.product_code && (
                                       <span className="font-mono font-bold text-orange-500 text-[10px] mr-1">
-                                        {(item.product as Record<string, unknown>).product_code as string}
+                                        {item.product.product_code}
                                       </span>
                                     )}
                                     <span className="font-semibold">{item.product?.name ?? '—'}</span>

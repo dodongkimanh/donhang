@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
-import { formatCurrency, formatDate, fmtThousands } from '@/utils/format'
+import { formatCurrency, fmtThousands } from '@/utils/format'
 import type { Supplier, SupplierPayment } from '@/types'
 import toast from 'react-hot-toast'
 

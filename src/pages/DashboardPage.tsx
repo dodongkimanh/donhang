@@ -402,7 +402,7 @@ export function DashboardPage() {
                     <LabelList
                       dataKey={`_lbl_${status}`}
                       position="right"
-                      formatter={(v: number | string | undefined) => (Number(v) > 0 ? fmtAxis(Number(v)) : '')}
+                      formatter={(v: unknown) => (Number(v) > 0 ? fmtAxis(Number(v)) : '')}
                       style={{ fontSize: 11, fontWeight: 600, fill: '#374151' }}
                     />
                   </Bar>

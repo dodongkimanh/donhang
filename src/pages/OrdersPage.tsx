@@ -1663,7 +1663,6 @@ function hexSVG(text: string, color: string, size: number) {
 
 function DeliveryNoteModal({ order, onClose }: { order: Order; onClose: () => void }) {
   const items = order.items ?? []
-  const carrier = CARRIERS.find((c) => c.value === order.shipping_carrier)
   const [cfg, setCfg] = useState<StoreConfig>(loadStoreConfig)
   const [showSettings, setShowSettings] = useState(false)
   const [editCfg, setEditCfg] = useState<StoreConfig>(cfg)
@@ -2140,7 +2139,7 @@ function ExportOrderModal({ order, onClose, onDone }: { order: Order; onClose: (
           </div>
         ) : (
           <div className="space-y-2">
-            {items.map((item, idx) => {
+            {items.map((item) => {
               const confirmed = !!item.confirmedPsId
               const noBarcodes = item.barcodes.length === 0
               const confirmedPs = item.barcodes.find((b) => b.psId === item.confirmedPsId)
@@ -2495,7 +2494,7 @@ export function OrdersPage() {
                 ))}
               </select>
             )}
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as OrderStatus | 'all')}
               className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500">
               <option value="all">Tất Cả ({filtered.length})</option>
               {STATUS_OPTIONS.map((s) => {
@@ -2576,7 +2575,7 @@ export function OrdersPage() {
                       const cost = its.reduce((cs, item) => {
                         const cp = item.cost_price != null
                           ? item.cost_price
-                          : ((item.product as Record<string, unknown>)?.cost_price as number | undefined) ?? 0
+                          : item.product?.cost_price ?? 0
                         return cs + cp * item.quantity
                       }, 0)
                       return s + o.final_amount - cost
@@ -2620,7 +2619,7 @@ export function OrdersPage() {
                   const totalCost = canEdit ? items.reduce((s, item) => {
                     const cp = item.cost_price != null
                       ? item.cost_price
-                      : ((item.product as Record<string, unknown>)?.cost_price as number | undefined) ?? 0
+                      : item.product?.cost_price ?? 0
                     return s + cp * item.quantity
                   }, 0) : 0
                   const isBelowCost = canEdit && items.length > 0 && totalCost > 0 && order.final_amount < totalCost
@@ -2694,7 +2693,7 @@ export function OrdersPage() {
                           )
                         })()}
                         {!isEmployee && items.some((item) => {
-                          const pQty = (item.product as Record<string, unknown>)?.quantity as number | undefined
+                          const pQty = item.product?.quantity
                           return pQty !== undefined && item.quantity > pQty
                         }) && (
                           <button
@@ -2769,7 +2768,7 @@ export function OrdersPage() {
                                 <tr key={item.id} className={i < items.length - 1 ? 'border-b border-dashed border-green-400' : ''}>
                                   <td className="py-1 pr-1 text-gray-300 w-3 align-top">✓</td>
                                   <td className="py-1 text-gray-900 font-semibold leading-snug">{item.product?.name ?? '—'}</td>
-                                  <td className={`py-1 text-right font-bold tabular-nums whitespace-nowrap pl-2 w-10 align-top ${((item.product as Record<string, unknown>)?.quantity as number | undefined) !== undefined && item.quantity > ((item.product as Record<string, unknown>).quantity as number) ? 'text-red-600' : 'text-blue-600'}`}>SL:{item.quantity}</td>
+                                  <td className={`py-1 text-right font-bold tabular-nums whitespace-nowrap pl-2 w-10 align-top ${item.product?.quantity !== undefined && item.quantity > item.product.quantity ? 'text-red-600' : 'text-blue-600'}`}>SL:{item.quantity}</td>
                                   <td className="py-1 text-right text-gray-600 font-medium tabular-nums whitespace-nowrap pl-2 w-28 align-top">{formatCurrency(item.unit_price)}</td>
                                 </tr>
                               ))}

@@ -724,7 +724,6 @@ export function InventoryPage() {
   // Existing stock info for selected NCC
   const selectedNccInfo = selectedProductNccs.find((ps) => ps.supplier_id === form.supplier_id)
   const isNewNcc = !!form.supplier_id && !selectedNccInfo
-  const exportQty = parseInt(form.quantity) || 0
 
   // ── Full-page bulk import view ──
   if (isBulkOpen && profile) {
