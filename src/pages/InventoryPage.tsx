@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, ArrowDownCircle, ArrowUpCircle, Truck, AlertTriangle, List, Printer, SlidersHorizontal, X, TrendingUp, TrendingDown, Minus, Trash2, Calendar, ChevronDown, ScanLine, UserCheck, RotateCcw, Pencil, Ban } from 'lucide-react'
+import { Plus, ArrowDownCircle, ArrowUpCircle, Truck, List, Printer, SlidersHorizontal, X, TrendingUp, TrendingDown, Minus, Trash2, Calendar, ChevronDown, ScanLine, UserCheck, RotateCcw, Pencil, Ban } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Modal } from '@/components/ui/Modal'
@@ -720,15 +720,11 @@ export function InventoryPage() {
   // Suppliers shown in dropdown based on type
   const selectedProductNccs = productSuppliers
   const suppliersForImport = suppliers // all suppliers (can add new NCC for product)
-  const suppliersForExport = selectedProductNccs.filter((ps) => ps.quantity > 0)
 
   // Existing stock info for selected NCC
   const selectedNccInfo = selectedProductNccs.find((ps) => ps.supplier_id === form.supplier_id)
   const isNewNcc = !!form.supplier_id && !selectedNccInfo
   const exportQty = parseInt(form.quantity) || 0
-  const exportInsufficient =
-    form.type === 'export' && !!form.supplier_id && !!form.quantity &&
-    selectedNccInfo !== undefined && exportQty > selectedNccInfo.quantity
 
   // ── Full-page bulk import view ──
   if (isBulkOpen && profile) {

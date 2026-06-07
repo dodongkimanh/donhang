@@ -13,7 +13,7 @@ import { VietnamAddressSelect } from '@/components/ui/VietnamAddressSelect'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { StatusBadge, ORDER_STATUS_CONFIG } from '@/components/ui/StatusBadge'
 import { formatCurrency, formatDate, formatDateOnly, fmtThousands } from '@/utils/format'
-import type { Order, OrderNote, OrderStatus, OrderSource, Product, Customer, OrderItem, ProductSupplier, InventoryTransaction, ReturnTicket, ReturnTicketItem } from '@/types'
+import type { Order, OrderNote, OrderStatus, OrderSource, Product, Customer, OrderItem, ProductSupplier, InventoryTransaction, ReturnTicketItem } from '@/types'
 import { useRoutePlanningStore } from '@/stores/routePlanningStore'
 import toast from 'react-hot-toast'
 
@@ -718,7 +718,7 @@ function ReturnTicketModal({
 function CreateOrderModal({
   isOpen, onClose, editingOrder, prefillCustomerId,
 }: { isOpen: boolean; onClose: () => void; editingOrder: Order | null; prefillCustomerId?: string }) {
-  const { profile, isAdmin, isAccountant, isEmployee } = useAuth()
+  const { profile, isAdmin, isEmployee } = useAuth()
   // Nhân viên tạo đơn → mặc định là Đơn Nháp; admin/kế toán → Đặt Đơn
   const defaultStatus: OrderStatus = isEmployee ? 'draft' : 'placed'
   const queryClient = useQueryClient()
@@ -1547,9 +1547,9 @@ function OrderDetailModal({ order, onClose }: { order: Order; onClose: () => voi
                     <tr key={item.id} className="hover:bg-gray-50/60">
                       <td className="px-3 py-2.5">
                         <div className="flex items-baseline gap-1.5 flex-wrap">
-                          {(item.product as Record<string, unknown>)?.product_code && (
+                          {item.product?.product_code && (
                             <span className="font-mono font-bold text-orange-500 text-[11px]">
-                              {(item.product as Record<string, unknown>).product_code as string}
+                              {item.product.product_code}
                             </span>
                           )}
                           <p className="font-semibold text-gray-900">{item.product?.name ?? '—'}</p>
@@ -1559,7 +1559,7 @@ function OrderDetailModal({ order, onClose }: { order: Order; onClose: () => voi
                         )}
                       </td>
                       <td className="px-3 py-2.5 text-center">
-                        <span className={`font-bold tabular-nums ${((item.product as Record<string, unknown>)?.quantity as number | undefined) !== undefined && item.quantity > ((item.product as Record<string, unknown>).quantity as number) ? 'text-red-600' : 'text-blue-600'}`}>
+                        <span className={`font-bold tabular-nums ${item.product?.quantity !== undefined && item.quantity > item.product.quantity ? 'text-red-600' : 'text-blue-600'}`}>
                           {item.quantity}
                         </span>
                       </td>
