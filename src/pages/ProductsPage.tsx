@@ -1105,9 +1105,18 @@ export function ProductsPage() {
                               className="rounded border-gray-300 text-blue-600" />
                           </td>
                           <td className="px-2 py-3">
-                            <button onClick={() => toggleFav(product.id)} className="block mx-auto">
-                              <Star size={14} className={isFav ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'} />
-                            </button>
+                            <div className="flex items-center justify-center gap-0.5">
+                              <button onClick={() => toggleFav(product.id)}>
+                                <Star size={14} className={isFav ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'} />
+                              </button>
+                              <button
+                                onClick={() => { setViewProduct(product); setViewImgIdx(0) }}
+                                className="p-0.5 text-gray-300 hover:text-teal-600 rounded"
+                                title="Xem sản phẩm"
+                              >
+                                <Eye size={14} />
+                              </button>
+                            </div>
                           </td>
                           <td className="px-3 py-2.5">
                             {(() => {
@@ -1210,13 +1219,6 @@ export function ProductsPage() {
                           </td>
                           <td className="px-3 py-2.5">
                             <div className="flex items-center justify-end gap-1">
-                              <button
-                                onClick={() => { setViewProduct(product); setViewImgIdx(0) }}
-                                className="p-1.5 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg"
-                                title="Xem sản phẩm"
-                              >
-                                <Eye size={15} />
-                              </button>
                               {!isEmployee && (
                                 <>
                                   <button onClick={() => setBarcodeProduct(product)} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg" title="Mã vạch">
