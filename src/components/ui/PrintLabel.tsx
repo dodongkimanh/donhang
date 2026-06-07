@@ -1,0 +1,387 @@
+import { useState } from 'react'
+import JsBarcode from 'jsbarcode'
+import { Printer, X, Minus, Plus, Truck } from 'lucide-react'
+import type { Product } from '@/types'
+import { formatCurrency } from '@/utils/format'
+
+function buildBarcodeSVG(value: string, height: number): string {
+  const ns = 'http://www.w3.org/2000/svg'
+  const svg = document.createElementNS(ns, 'svg')
+  svg.style.visibility = 'hidden'
+  svg.style.position = 'absolute'
+  document.body.appendChild(svg)
+  try {
+    JsBarcode(svg, value, {
+      format: 'CODE128',
+      width: 1.4,
+      height,
+      displayValue: true,
+      fontSize: 9,
+      margin: 2,
+      background: '#ffffff',
+      lineColor: '#000000',
+    })
+  } finally {
+    document.body.removeChild(svg)
+  }
+  return new XMLSerializer().serializeToString(svg)
+}
+
+function buildPrintHTML(
+  product: Product,
+  barcode: string,
+  copies: number,
+  labelSize: LabelSize,
+): string {
+  const barcodeSVG = buildBarcodeSVG(barcode, labelSize.barcodeH)
+
+  const singleLabel = `
+    <div class="label">
+      <div class="name">${escHtml(product.name)}</div>
+      <div class="codes">
+        <span class="product-code">Mã: <strong>${escHtml(product.product_code)}</strong></span>
+      </div>
+      <div class="barcode-wrap">${barcodeSVG}</div>
+      <div class="price">${formatCurrency(product.sale_price)}</div>
+    </div>
+  `
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>In Tem - ${escHtml(product.name)}</title>
+  <style>
+    @page {
+      size: ${labelSize.w}mm ${labelSize.h}mm;
+      margin: 0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #fff;
+    }
+    .label {
+      width: ${labelSize.w}mm;
+      height: ${labelSize.h}mm;
+      padding: 1.5mm 2mm;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      page-break-after: always;
+      overflow: hidden;
+    }
+    .name {
+      font-size: ${labelSize.nameFontPt}pt;
+      font-weight: bold;
+      text-align: center;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      line-height: 1.2;
+    }
+    .codes {
+      font-size: ${labelSize.codeFontPt}pt;
+      color: #333;
+      text-align: center;
+    }
+    .product-code strong { letter-spacing: 0.5px; }
+    .barcode-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      width: 100%;
+    }
+    .barcode-wrap svg { max-width: 100%; height: auto; }
+    .price {
+      font-size: ${labelSize.priceFontPt}pt;
+      font-weight: bold;
+      color: #c0392b;
+      letter-spacing: 0.3px;
+    }
+  </style>
+</head>
+<body>
+  ${Array(copies).fill(singleLabel).join('')}
+  <script>
+    window.onload = function() {
+      setTimeout(function() { window.print(); window.close(); }, 400);
+    };
+  <\/script>
+</body>
+</html>`
+}
+
+function escHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+interface LabelSize {
+  label: string
+  w: number
+  h: number
+  barcodeH: number
+  nameFontPt: number
+  codeFontPt: number
+  priceFontPt: number
+}
+
+const LABEL_SIZES: LabelSize[] = [
+  { label: '50 × 30 mm (nhỏ)',  w: 50, h: 30, barcodeH: 28, nameFontPt: 7,  codeFontPt: 6,  priceFontPt: 7  },
+  { label: '60 × 40 mm (vừa)',  w: 60, h: 40, barcodeH: 38, nameFontPt: 9,  codeFontPt: 7,  priceFontPt: 8  },
+  { label: '80 × 50 mm (lớn)',  w: 80, h: 50, barcodeH: 46, nameFontPt: 11, codeFontPt: 9,  priceFontPt: 10 },
+]
+
+const COPY_PRESETS = [1, 5, 10, 20, 50]
+
+interface Props {
+  product: Product | null
+  onClose: () => void
+}
+
+export function PrintLabelModal({ product, onClose }: Props) {
+  const [copies, setCopies] = useState(1)
+  const [sizeIdx, setSizeIdx] = useState(0)
+  // Selected NCC supplier_id for barcode; null = use product.barcode (no NCCs)
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null)
+
+  if (!product) return null
+
+  const hasNccs = (product.product_suppliers?.length ?? 0) > 0
+  // Determine which NCC is selected (default: first one)
+  const activeNcc = hasNccs
+    ? (product.product_suppliers!.find((ps) => ps.supplier_id === selectedSupplierId)
+       ?? product.product_suppliers![0])
+    : null
+
+  // The barcode to print: NCC's own barcode if available, else product barcode
+  const activeBarcodeValue = activeNcc?.barcode ?? product.barcode
+  const activeNccName = activeNcc?.supplier?.name ?? null
+
+  function handlePrint() {
+    if (!product) return
+    const win = window.open('', '_blank', 'width=800,height=600,menubar=no,toolbar=no')
+    if (!win) {
+      alert('Trình duyệt chặn popup. Vui lòng cho phép popup từ trang này.')
+      return
+    }
+    win.document.write(buildPrintHTML(product, activeBarcodeValue, copies, LABEL_SIZES[sizeIdx]))
+    win.document.close()
+  }
+
+  const px = 2.5
+  const size = LABEL_SIZES[sizeIdx]
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh]">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0">
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <Printer size={20} className="text-blue-600" />
+            In Tem Sản Phẩm
+          </h2>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-5 overflow-y-auto">
+          {/* Product info */}
+          <div className="bg-gray-50 rounded-xl px-4 py-3 text-sm">
+            <p className="font-semibold text-gray-900">{product.name}</p>
+            <div className="flex flex-wrap gap-4 mt-1 text-gray-500">
+              <span>Mã hàng: <strong className="text-gray-800">{product.product_code}</strong></span>
+              <span>Mã vạch: <strong className="text-gray-800 font-mono">{activeBarcodeValue}</strong></span>
+            </div>
+          </div>
+
+          {/* NCC Barcode Selector — shown when product has multiple NCCs */}
+          {hasNccs && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1.5">
+                <Truck size={14} className="text-indigo-500" />
+                Chọn mã vạch theo Nhà Cung Cấp
+              </label>
+              <div className="space-y-2">
+                {product.product_suppliers!.map((ps) => {
+                  const isActive = activeNcc?.supplier_id === ps.supplier_id
+                  return (
+                    <button
+                      key={ps.supplier_id}
+                      type="button"
+                      onClick={() => setSelectedSupplierId(ps.supplier_id)}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all ${
+                        isActive
+                          ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-400'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                        isActive ? 'border-blue-500 bg-blue-500' : 'border-gray-300'
+                      }`}>
+                        {isActive && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 truncate">
+                          {ps.supplier?.name ?? 'NCC không xác định'}
+                        </p>
+                        <p className="text-xs font-mono text-gray-500 mt-0.5">{ps.barcode}</p>
+                      </div>
+                      <div className="text-right flex-shrink-0 text-xs text-gray-500">
+                        <p>Tồn: <span className="font-bold text-green-700">{ps.quantity}</span></p>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-gray-400 mt-1.5">
+                Tem sẽ in mã vạch của NCC được chọn ở trên.
+              </p>
+            </div>
+          )}
+
+          {/* Size selector */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Kích thước tem</label>
+            <div className="flex gap-2 flex-wrap">
+              {LABEL_SIZES.map((s, i) => (
+                <button
+                  key={s.label}
+                  onClick={() => setSizeIdx(i)}
+                  className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                    sizeIdx === i
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Label preview */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Xem trước</label>
+            <div className="flex justify-center">
+              <div
+                className="border-2 border-dashed border-gray-300 bg-white rounded shadow-sm flex flex-col items-center justify-between overflow-hidden"
+                style={{ width: size.w * px, height: size.h * px, padding: `${1.5 * px}px ${2 * px}px` }}
+              >
+                <p className="font-bold text-center leading-tight overflow-hidden" style={{ fontSize: size.nameFontPt * px * 0.6, maxWidth: '100%' }}>
+                  {product.name}
+                </p>
+                <p className="text-gray-500" style={{ fontSize: size.codeFontPt * px * 0.6 }}>
+                  Mã: <strong className="text-gray-800">{product.product_code}</strong>
+                </p>
+                <PreviewBarcode barcode={activeBarcodeValue} height={size.barcodeH * px * 0.55} />
+                <p className="font-bold text-red-600" style={{ fontSize: size.priceFontPt * px * 0.6 }}>
+                  {formatCurrency(product.sale_price)}
+                </p>
+              </div>
+            </div>
+            {activeNccName && (
+              <p className="text-center text-xs text-indigo-600 mt-1.5 font-medium flex items-center justify-center gap-1">
+                <Truck size={11} /> Mã vạch của {activeNccName}
+              </p>
+            )}
+            <p className="text-center text-xs text-gray-400 mt-0.5">Tỷ lệ xem trước (không chính xác 100%)</p>
+          </div>
+
+          {/* Copy count */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Số lượng tem</label>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => setCopies((c) => Math.max(1, c - 1))}
+                  className="px-3 py-2 hover:bg-gray-50 transition-colors text-gray-600"
+                >
+                  <Minus size={16} />
+                </button>
+                <input
+                  type="number"
+                  value={copies}
+                  onChange={(e) => setCopies(Math.max(1, Math.min(200, parseInt(e.target.value) || 1)))}
+                  className="w-16 text-center py-2 border-x border-gray-300 outline-none text-sm font-medium"
+                  min={1}
+                  max={200}
+                />
+                <button
+                  onClick={() => setCopies((c) => Math.min(200, c + 1))}
+                  className="px-3 py-2 hover:bg-gray-50 transition-colors text-gray-600"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+              <div className="flex gap-1.5">
+                {COPY_PRESETS.map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setCopies(n)}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs border transition-colors ${
+                      copies === n
+                        ? 'bg-gray-800 text-white border-gray-800'
+                        : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-4 border-t bg-gray-50 flex items-center justify-between flex-shrink-0">
+          <p className="text-sm text-gray-500">
+            In <span className="font-semibold text-gray-800">{copies}</span> tem · {size.label}
+            {activeNccName && (
+              <span className="text-indigo-600"> · {activeNccName}</span>
+            )}
+          </p>
+          <div className="flex gap-3">
+            <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-100 transition-colors">
+              Đóng
+            </button>
+            <button
+              onClick={handlePrint}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors"
+            >
+              <Printer size={16} />
+              In {copies} Tem
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PreviewBarcode({ barcode, height }: { barcode: string; height: number }) {
+  const svgRef = (el: SVGSVGElement | null) => {
+    if (!el) return
+    try {
+      JsBarcode(el, barcode, {
+        format: 'CODE128',
+        width: 1,
+        height,
+        displayValue: true,
+        fontSize: 7,
+        margin: 1,
+        background: 'transparent',
+        lineColor: '#000',
+      })
+    } catch { /* ignore invalid barcode */ }
+  }
+  return <svg ref={svgRef} style={{ maxWidth: '100%' }} />
+}
