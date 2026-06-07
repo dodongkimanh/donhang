@@ -820,7 +820,7 @@ export function ProductsPage() {
                     ? 'bg-orange-500 text-white border-orange-500'
                     : key === 'in_stock'
                       ? 'bg-green-600 text-white border-green-600'
-                      : 'bg-gray-800 text-white border-gray-800'
+                      : 'bg-blue-600 text-white border-blue-600'
                 : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
             }`}
           >
