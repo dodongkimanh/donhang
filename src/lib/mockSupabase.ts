@@ -23,6 +23,8 @@ const store: Record<string, Row[]> = {
   route_orders: [],
   stock_calls: [],
   stock_call_notes: [],
+  product_bundles: [],
+  bundle_items: [],
   auth_users: [],
 }
 
@@ -97,6 +99,12 @@ const relations: Record<string, Record<string, Relation>> = {
   },
   routes: {
     route_orders: { table: 'route_orders', foreignKey: 'route_id', type: 'hasMany' },
+  },
+  product_bundles: {
+    items: { table: 'bundle_items', foreignKey: 'bundle_id', type: 'hasMany' },
+  },
+  bundle_items: {
+    product: { table: 'products', foreignKey: 'product_id', type: 'belongsTo' },
   },
   route_orders: {
     order: { table: 'orders', foreignKey: 'order_id', type: 'belongsTo' },

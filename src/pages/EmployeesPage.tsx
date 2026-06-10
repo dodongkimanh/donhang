@@ -64,7 +64,7 @@ export function EmployeesPage() {
   const { data: employees = [], isLoading } = useQuery({
     queryKey: ['employees'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('profiles').select('*').order('full_name')
+      const { data, error } = await supabase.from('profiles').select('*').neq('email', 'admin@kimanh.com').order('full_name')
       if (error) throw error
       return (data ?? []) as Profile[]
     },

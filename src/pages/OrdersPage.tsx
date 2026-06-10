@@ -4,16 +4,17 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, Truck, CheckCircle, AlertTriangle, Search,
   Send, MessageSquare, ChevronDown, Pencil, Settings, UserPlus, X, ScanLine, Printer, MapPin, Eye, EyeOff, PhoneCall,
-  RotateCcw, ArrowLeftRight, Receipt,
+  RotateCcw, ArrowLeftRight, Receipt, Package, Camera,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Modal } from '@/components/ui/Modal'
+import { BarcodeScannerModal } from '@/components/ui/BarcodeScannerModal'
 import { VietnamAddressSelect } from '@/components/ui/VietnamAddressSelect'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { StatusBadge, ORDER_STATUS_CONFIG } from '@/components/ui/StatusBadge'
 import { formatCurrency, formatDate, formatDateOnly, fmtThousands } from '@/utils/format'
-import type { Order, OrderNote, OrderStatus, OrderSource, Product, Customer, OrderItem, ProductSupplier, InventoryTransaction, ReturnTicketItem } from '@/types'
+import type { Order, OrderNote, OrderStatus, OrderSource, Product, Customer, OrderItem, ProductSupplier, InventoryTransaction, ReturnTicketItem, ProductBundle, Profile } from '@/types'
 import { useRoutePlanningStore } from '@/stores/routePlanningStore'
 import toast from 'react-hot-toast'
 
@@ -26,6 +27,7 @@ const CARRIERS: { value: string; label: string; hasCode: boolean }[] = [
   { value: 'nhattin',  label: 'Nhất Tín',                hasCode: true  },
   { value: 'xeghep',   label: 'Gửi xe ghép',             hasCode: false },
   { value: 'xenha',    label: 'Xe nhà vận chuyển',       hasCode: false },
+  { value: 'showroom', label: 'Giao hàng tại showroom',  hasCode: false },
 ]
 
 // ── Shipping + Note editor (inline, admin/accountant/kho only) ────────────────
@@ -791,6 +793,18 @@ function CreateOrderModal({
     enabled: isOpen,
   })
 
+  const { data: bundles = [] } = useQuery({
+    queryKey: ['product-bundles-for-order'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('product_bundles')
+        .select('*, items:bundle_items(*, product:products(id, name, product_code, sale_price, unit, quantity, image_url))')
+        .order('name')
+      return (data ?? []) as ProductBundle[]
+    },
+    enabled: isOpen,
+  })
+
   const { data: customers = [] } = useQuery({
     queryKey: ['customers-simple', profile?.id, isEmployee],
     queryFn: async () => {
@@ -1003,6 +1017,37 @@ function CreateOrderModal({
     }
   }
 
+  function addBundle(bundle: ProductBundle) {
+    const bundleItems = bundle.items ?? []
+    if (bundleItems.length === 0) return
+    let updated = [...form.items]
+    bundleItems.forEach((bi) => {
+      if (!bi.product) return
+      const p = bi.product
+      const idx = updated.findIndex((i) => i.product_id === p.id)
+      if (idx >= 0) {
+        updated[idx] = {
+          ...updated[idx],
+          quantity: updated[idx].quantity + bi.quantity,
+          subtotal: (updated[idx].quantity + bi.quantity) * updated[idx].unit_price - updated[idx].discount,
+        }
+      } else {
+        updated.push({
+          product_id: p.id,
+          product_name: p.name,
+          product_code: p.product_code ?? '',
+          image_url: p.image_url ?? undefined,
+          unit: p.unit,
+          quantity: bi.quantity,
+          unit_price: p.sale_price,
+          discount: 0,
+          subtotal: p.sale_price * bi.quantity,
+        })
+      }
+    })
+    setForm({ ...form, items: updated })
+  }
+
   function removeItem(index: number) {
     setForm({ ...form, items: form.items.filter((_, i) => i !== index) })
   }
@@ -1020,6 +1065,14 @@ function CreateOrderModal({
         if (!productSearch) return true
         const q = productSearch.toLowerCase()
         return p.name.toLowerCase().includes(q) || (p.product_code ?? '').toLowerCase().includes(q)
+      })
+    : []
+
+  const filteredBundles = (productSearch.length > 0 || showAllProducts)
+    ? bundles.filter((b) => {
+        if (!productSearch) return true
+        const q = productSearch.toLowerCase()
+        return b.name.toLowerCase().includes(q) || b.bundle_code.toLowerCase().includes(q)
       })
     : []
 
@@ -1179,78 +1232,113 @@ function CreateOrderModal({
                 </select>
               </div>
 
-              {/* Tìm sản phẩm */}
+              {/* Tìm sản phẩm & bộ sản phẩm */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tìm Sản Phẩm</label>
-              <div className="flex gap-1">
-                <div className="relative flex-1">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={productSearch}
-                    onChange={(e) => { setProductSearch(e.target.value); if (e.target.value) setShowAllProducts(false) }}
-                    placeholder="Tên hoặc mã hàng..."
-                    className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => { setShowAllProducts((v) => !v); setProductSearch('') }}
-                  title="Xem tất cả sản phẩm"
-                  className={`px-2.5 py-2 border rounded-lg transition-colors flex-shrink-0 ${showAllProducts ? 'bg-blue-50 border-blue-300 text-blue-600' : 'border-gray-300 text-gray-500 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600'}`}
-                >
-                  <ChevronDown size={15} className={`transition-transform duration-200 ${showAllProducts ? 'rotate-180' : ''}`} />
-                </button>
-              </div>
-
-              {showProductDropdown && (
-                <div className="border border-gray-200 rounded-lg mt-1.5 overflow-hidden shadow-sm">
-                  <div className="max-h-56 overflow-y-auto divide-y divide-gray-100">
-                    {filteredProducts.length === 0 && (
-                      <p className="px-3 py-3 text-sm text-gray-400 italic text-center">Không tìm thấy sản phẩm</p>
-                    )}
-                    {filteredProducts.map((p) => {
-                      const alreadyInCart = form.items.some((i) => i.product_id === p.id)
-                      return (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => addProduct(p)}
-                          className="w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors flex items-center gap-3"
-                        >
-                          {/* Product image */}
-                          <div className="w-10 h-10 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
-                            {p.image_url
-                              ? <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
-                              : (
-                                <div className="w-full h-full flex items-center justify-center text-indigo-400 text-base font-bold bg-gradient-to-br from-blue-50 to-indigo-100">
-                                  {p.name.charAt(0).toUpperCase()}
-                                </div>
-                              )
-                            }
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-800 leading-snug line-clamp-2">{p.name}</p>
-                            <p className="text-[11px] text-gray-400 mt-0.5">
-                              <span className="font-mono">{p.product_code}</span>
-                              {' · '}Tồn: <span className={(() => { const a = Math.max(0, p.quantity - (reservedQty[p.id] ?? 0)); return a > 0 ? 'text-green-600 font-medium' : 'text-red-500' })()}>{Math.max(0, p.quantity - (reservedQty[p.id] ?? 0))}</span>
-                              {' '}{p.unit}
-                            </p>
-                          </div>
-                          <span className="text-xs font-semibold text-blue-600 tabular-nums">{formatCurrency(p.sale_price)}</span>
-                          <span className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${alreadyInCart ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
-                            {alreadyInCart ? '✓' : '+'}
-                          </span>
-                        </button>
-                      )
-                    })}
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tìm Sản Phẩm / Bộ Sản Phẩm</label>
+                <div className="flex gap-1">
+                  <div className="relative flex-1">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={productSearch}
+                      onChange={(e) => { setProductSearch(e.target.value); if (e.target.value) setShowAllProducts(false) }}
+                      placeholder="Tên, mã hàng, hoặc mã bộ (B001)..."
+                      className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                    />
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => { setShowAllProducts((v) => !v); setProductSearch('') }}
+                    title="Xem tất cả sản phẩm"
+                    className={`px-2.5 py-2 border rounded-lg transition-colors flex-shrink-0 ${showAllProducts ? 'bg-blue-50 border-blue-300 text-blue-600' : 'border-gray-300 text-gray-500 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-600'}`}
+                  >
+                    <ChevronDown size={15} className={`transition-transform duration-200 ${showAllProducts ? 'rotate-180' : ''}`} />
+                  </button>
                 </div>
-              )}
 
-              {form.items.length > 0 && (
-                <p className="mt-1.5 text-xs text-gray-400">{form.items.length} sản phẩm đã chọn</p>
-              )}
+                {showProductDropdown && (
+                  <div className="border border-gray-200 rounded-lg mt-1.5 overflow-hidden shadow-sm">
+                    <div className="max-h-64 overflow-y-auto divide-y divide-gray-100">
+                      {/* Bundles section */}
+                      {filteredBundles.length > 0 && (
+                        <>
+                          <div className="px-3 py-1.5 bg-purple-50 flex items-center gap-1.5">
+                            <Package size={11} className="text-purple-500" />
+                            <span className="text-[11px] font-semibold text-purple-600 uppercase tracking-wide">Bộ Sản Phẩm</span>
+                          </div>
+                          {filteredBundles.slice(0, 3).map((bundle) => (
+                            <button
+                              key={bundle.id}
+                              type="button"
+                              onClick={() => addBundle(bundle)}
+                              className="w-full text-left px-3 py-2.5 hover:bg-purple-50 transition-colors flex items-center gap-3"
+                            >
+                              <div className="w-10 h-10 flex-shrink-0 rounded-lg overflow-hidden bg-purple-50 border border-purple-100 flex items-center justify-center">
+                                {bundle.image_url
+                                  ? <img src={bundle.image_url} alt={bundle.name} className="w-full h-full object-cover" />
+                                  : <Package size={14} className="text-purple-400" />
+                                }
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono text-[10px] font-bold text-purple-700 bg-purple-100 px-1 py-0.5 rounded">{bundle.bundle_code}</span>
+                                  <p className="text-sm font-medium text-gray-800 truncate">{bundle.name}</p>
+                                </div>
+                                <p className="text-[11px] text-gray-400 mt-0.5">
+                                  {bundle.items?.length ?? 0} món · {(bundle.items ?? []).slice(0, 2).map((bi) => bi.product?.name).filter(Boolean).join(', ')}{(bundle.items?.length ?? 0) > 2 ? '...' : ''}
+                                </p>
+                              </div>
+                              <span className="text-xs font-bold text-purple-600 flex-shrink-0 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                {formatCurrency((bundle.items ?? []).reduce((sum, bi) => sum + (bi.product?.sale_price ?? 0) * bi.quantity, 0))}
+                              </span>
+                            </button>
+                          ))}
+                          {filteredProducts.length > 0 && <div className="px-3 py-1.5 bg-gray-50 flex items-center gap-1.5">
+                            <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Sản Phẩm</span>
+                          </div>}
+                        </>
+                      )}
+                      {/* Products section */}
+                      {filteredProducts.length === 0 && filteredBundles.length === 0 && (
+                        <p className="px-3 py-3 text-sm text-gray-400 italic text-center">Không tìm thấy sản phẩm hoặc bộ</p>
+                      )}
+                      {filteredProducts.map((p) => {
+                        const alreadyInCart = form.items.some((i) => i.product_id === p.id)
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => addProduct(p)}
+                            className="w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors flex items-center gap-3"
+                          >
+                            <div className="w-10 h-10 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
+                              {p.image_url
+                                ? <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+                                : <div className="w-full h-full flex items-center justify-center text-indigo-400 text-base font-bold bg-gradient-to-br from-blue-50 to-indigo-100">{p.name.charAt(0).toUpperCase()}</div>
+                              }
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-800 leading-snug line-clamp-2">{p.name}</p>
+                              <p className="text-[11px] text-gray-400 mt-0.5">
+                                <span className="font-mono">{p.product_code}</span>
+                                {' · '}Tồn: <span className={(() => { const a = Math.max(0, p.quantity - (reservedQty[p.id] ?? 0)); return a > 0 ? 'text-green-600 font-medium' : 'text-red-500' })()}>{Math.max(0, p.quantity - (reservedQty[p.id] ?? 0))}</span>
+                                {' '}{p.unit}
+                              </p>
+                            </div>
+                            <span className="text-xs font-semibold text-blue-600 tabular-nums">{formatCurrency(p.sale_price)}</span>
+                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${alreadyInCart ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
+                              {alreadyInCart ? '✓' : '+'}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {form.items.length > 0 && (
+                  <p className="mt-1.5 text-xs text-gray-400">{form.items.length} sản phẩm đã chọn</p>
+                )}
               </div>{/* end Tìm sản phẩm */}
             </div>{/* end RIGHT column */}
           </div>{/* end 2-col grid */}
@@ -1647,11 +1735,11 @@ const DEFAULT_CONFIG: StoreConfig = {
   qrImageUrl: '',
 }
 
-function loadStoreConfig(): StoreConfig {
+function loadStoreConfigLocal(): StoreConfig {
   try { const s = localStorage.getItem('crm_store_cfg'); return s ? { ...DEFAULT_CONFIG, ...JSON.parse(s) } : DEFAULT_CONFIG }
   catch { return DEFAULT_CONFIG }
 }
-function saveStoreConfig(c: StoreConfig) { try { localStorage.setItem('crm_store_cfg', JSON.stringify(c)) } catch { /* quota exceeded */ } }
+function cacheStoreConfigLocal(c: StoreConfig) { try { localStorage.setItem('crm_store_cfg', JSON.stringify(c)) } catch { /* quota exceeded */ } }
 
 function hexSVG(text: string, color: string, size: number) {
   const safeColor = /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#f59e0b'
@@ -1663,21 +1751,78 @@ function hexSVG(text: string, color: string, size: number) {
 
 function DeliveryNoteModal({ order, onClose }: { order: Order; onClose: () => void }) {
   const items = order.items ?? []
-  const [cfg, setCfg] = useState<StoreConfig>(loadStoreConfig)
+  const queryClient = useQueryClient()
+  const { profile } = useAuth()
+  const [cfg, setCfg] = useState<StoreConfig>(loadStoreConfigLocal)
   const [showSettings, setShowSettings] = useState(false)
   const [editCfg, setEditCfg] = useState<StoreConfig>(cfg)
 
+  // Load shared config from Supabase (overrides localStorage if found)
+  const { data: remoteConfig } = useQuery({
+    queryKey: ['app-settings', 'store_config'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'store_config')
+        .single()
+      return data?.value as StoreConfig | null ?? null
+    },
+    staleTime: 60000,
+  })
+
+  useEffect(() => {
+    if (remoteConfig) {
+      const merged = { ...DEFAULT_CONFIG, ...remoteConfig }
+      setCfg(merged)
+      cacheStoreConfigLocal(merged)
+    }
+  }, [remoteConfig])
+
+  const saveSettingsMutation = useMutation({
+    mutationFn: async (config: StoreConfig) => {
+      const { error } = await supabase
+        .from('app_settings')
+        .upsert({ key: 'store_config', value: config, updated_at: new Date().toISOString() })
+      if (error) throw error
+    },
+    onSuccess: (_, config) => {
+      cacheStoreConfigLocal(config)
+      setCfg(config)
+      setShowSettings(false)
+      queryClient.invalidateQueries({ queryKey: ['app-settings', 'store_config'] })
+      toast.success('Đã lưu cấu hình cửa hàng')
+    },
+    onError: () => toast.error('Lỗi khi lưu cấu hình'),
+  })
+
   function saveSettings() {
-    saveStoreConfig(editCfg)
-    setCfg(editCfg)
-    setShowSettings(false)
+    saveSettingsMutation.mutate(editCfg)
   }
 
   const qrUrl = cfg.qrImageUrl || (cfg.bankAccount && cfg.bankBin
     ? `https://img.vietqr.io/image/${cfg.bankBin}-${cfg.bankAccount}-compact2.jpg?amount=${order.final_amount}&addInfo=${encodeURIComponent(order.order_number)}&accountName=${encodeURIComponent(cfg.bankHolder || cfg.name)}`
     : '')
 
-  function handlePrint() {
+  async function handlePrint() {
+    const senderName = order.employee?.full_name ?? cfg.name
+    const senderPhone = (order.employee as Profile | undefined)?.phone ?? cfg.phone
+
+    // Preload QR as data URL so it renders in the print popup (avoids cross-origin/timing issues)
+    let printQrUrl = qrUrl
+    if (qrUrl && !qrUrl.startsWith('data:')) {
+      try {
+        const res = await fetch(qrUrl)
+        const blob = await res.blob()
+        printQrUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(blob)
+        })
+      } catch { /* keep original URL as fallback */ }
+    }
+
     const rows = items.map((item, i) => `
       <tr>
         <td style="border:1px solid #ccc;padding:6px 10px;text-align:center">${i + 1}</td>
@@ -1693,7 +1838,7 @@ function DeliveryNoteModal({ order, onClose }: { order: Order; onClose: () => vo
           <p>Ngân Hàng: ${cfg.bankName || (BANKS_VN.find(b => b.bin === cfg.bankBin)?.name ?? '')}</p>
           <p>STK: ${cfg.bankAccount}</p>
         </div>
-        ${qrUrl ? `<img src="${qrUrl}" alt="QR" style="width:360px;height:360px;object-fit:contain;flex-shrink:0" onerror="this.style.display='none'"/>` : ''}
+        ${printQrUrl ? `<img src="${printQrUrl}" alt="QR" style="width:252px;height:252px;object-fit:contain;flex-shrink:0"/>` : ''}
       </div>` : ''
 
     const html = `<!DOCTYPE html><html><head>
@@ -1718,12 +1863,12 @@ function DeliveryNoteModal({ order, onClose }: { order: Order; onClose: () => vo
           <p style="color:#555">Ngày: ${new Date(order.created_at).toLocaleString('vi-VN')}</p>
         </div>
       </div>
-      <p style="margin-bottom:10px"><strong>Người gửi:</strong> ${cfg.name}${cfg.phone ? ' - ' + cfg.phone : ''}</p>
+      <p style="margin-bottom:10px"><strong>Người gửi:</strong> ${senderName}${senderPhone ? ' - ' + senderPhone : ''}</p>
       ${cfg.address ? `<p style="margin-left:16px;color:#555;margin-bottom:10px">${cfg.address}</p>` : ''}
       <p style="margin-bottom:4px"><strong>Người nhận:</strong> ${order.customer?.name ?? 'Khách lẻ'}${order.customer?.phone ? ' - ' + order.customer.phone : ''}</p>
       ${order.customer?.address ? `<p style="margin-left:16px;color:#555;margin-bottom:10px">${order.customer.address}</p>` : ''}
       <p style="margin-bottom:14px"><strong>Tổng thu người nhận: <span style="color:#d97706;font-size:17px">${order.final_amount.toLocaleString('vi-VN')} VND</span></strong></p>
-      <p style="margin-bottom:14px">Lưu ý khi giao hàng:&nbsp;${order.note ?? '............................................................'}</p>
+      <p style="margin-bottom:14px">Lưu ý khi giao hàng:&nbsp;............................................................</p>
       <p style="margin-bottom:6px"><strong>Tổng số sản phẩm: ${items.length}</strong></p>
       <table>
         <thead><tr>
@@ -1746,13 +1891,15 @@ function DeliveryNoteModal({ order, onClose }: { order: Order; onClose: () => vo
   return (
     <Modal isOpen onClose={onClose} title="Phiếu Giao Hàng" size="xl">
       <div className="space-y-4">
-        {/* Settings toggle */}
-        <div className="flex justify-end">
-          <button onClick={() => { setEditCfg(cfg); setShowSettings((v) => !v) }}
-            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-50">
-            <Settings size={12} /> Cấu hình cửa hàng
-          </button>
-        </div>
+        {/* Settings toggle — chỉ admin */}
+        {profile?.role === 'admin' && (
+          <div className="flex justify-end">
+            <button onClick={() => { setEditCfg(cfg); setShowSettings((v) => !v) }}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 px-2.5 py-1.5 rounded-lg hover:bg-gray-50">
+              <Settings size={12} /> Cấu hình cửa hàng
+            </button>
+          </div>
+        )}
 
         {/* Settings form */}
         {showSettings && (
@@ -1817,7 +1964,10 @@ function DeliveryNoteModal({ order, onClose }: { order: Order; onClose: () => vo
             </div>
             <div className="flex justify-end gap-2">
               <button onClick={() => setShowSettings(false)} className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50">Hủy</button>
-              <button onClick={saveSettings} className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">Lưu</button>
+              <button onClick={saveSettings} disabled={saveSettingsMutation.isPending}
+                className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg font-medium">
+                {saveSettingsMutation.isPending ? 'Đang lưu...' : 'Lưu'}
+              </button>
             </div>
           </div>
         )}
@@ -1835,12 +1985,12 @@ function DeliveryNoteModal({ order, onClose }: { order: Order; onClose: () => vo
           </div>
 
           <div className="space-y-1.5 text-xs">
-            <p><strong>Người gửi:</strong> {cfg.name}{cfg.phone ? ` - ${cfg.phone}` : ''}</p>
+            <p><strong>Người gửi:</strong> {order.employee?.full_name ?? cfg.name}{((order.employee as Profile | undefined)?.phone ?? cfg.phone) ? ` - ${(order.employee as Profile | undefined)?.phone ?? cfg.phone}` : ''}</p>
             {cfg.address && <p className="ml-4 text-gray-500">{cfg.address}</p>}
             <p><strong>Người nhận:</strong> {order.customer?.name ?? 'Khách lẻ'}{order.customer?.phone ? ` - ${order.customer.phone}` : ''}</p>
             {order.customer?.address && <p className="ml-4 text-gray-500">{order.customer.address}</p>}
             <p className="font-bold pt-1">Tổng thu người nhận: <span className="text-amber-600 text-sm">{order.final_amount.toLocaleString('vi-VN')} VND</span></p>
-            <p>Lưu ý khi giao hàng: {order.note ?? '....................................'}</p>
+            <p>Lưu ý khi giao hàng: ....................................</p>
             <p><strong>Tổng số sản phẩm: {items.length}</strong></p>
           </div>
 
@@ -1874,7 +2024,7 @@ function DeliveryNoteModal({ order, onClose }: { order: Order; onClose: () => vo
               </div>
               {qrUrl && (
                 <img src={qrUrl} alt="VietQR" className="object-contain rounded-lg flex-shrink-0"
-                  style={{ width: '336px', height: '336px' }}
+                  style={{ width: '235px', height: '235px' }}
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
               )}
             </div>
@@ -1914,6 +2064,7 @@ function ExportOrderModal({ order, onClose, onDone }: { order: Order; onClose: (
   const [loading, setLoading] = useState(true)
   const [scanInput, setScanInput] = useState('')
   const [scanMsg, setScanMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [showCamera, setShowCamera] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -2096,23 +2247,33 @@ function ExportOrderModal({ order, onClose, onDone }: { order: Order; onClose: (
         {/* Scan input */}
         {!loading && (
           <div className="space-y-2">
-            <div className="relative">
-              <ScanLine size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
-              <input
-                ref={inputRef}
-                type="text"
-                value={scanInput}
-                onChange={(e) => setScanInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleScan(scanInput) }}
-                placeholder="Bắn hoặc nhập mã vạch sản phẩm rồi Enter..."
-                className="w-full pl-10 pr-4 py-3 border-2 border-blue-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none text-sm font-mono bg-blue-50/40"
-                autoFocus
-              />
-              {totalRequired > 0 && (
-                <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium ${confirmedCount === totalRequired ? 'text-green-600' : 'text-gray-400'}`}>
-                  {confirmedCount}/{totalRequired} sp
-                </span>
-              )}
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <ScanLine size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={scanInput}
+                  onChange={(e) => setScanInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleScan(scanInput) }}
+                  placeholder="Bắn hoặc nhập mã vạch rồi Enter..."
+                  className="w-full pl-10 pr-16 py-3 border-2 border-blue-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none text-sm font-mono bg-blue-50/40"
+                  autoFocus
+                />
+                {totalRequired > 0 && (
+                  <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium ${confirmedCount === totalRequired ? 'text-green-600' : 'text-gray-400'}`}>
+                    {confirmedCount}/{totalRequired} sp
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCamera(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors flex-shrink-0"
+                title="Mở camera quét mã vạch"
+              >
+                <Camera size={18} />
+              </button>
             </div>
 
             {/* Scan result message */}
@@ -2165,20 +2326,19 @@ function ExportOrderModal({ order, onClose, onDone }: { order: Order; onClose: (
                         {item.stockError && <span className="ml-2 text-red-600">· {item.stockError}</span>}
                       </p>
 
-                      {/* Danh sách mã vạch cần quét (chỉ hiện thông tin, không bấm được) */}
+                      {/* Danh sách NCC cần quét — ẩn mã vạch để buộc nhân viên dùng máy quét */}
                       {!confirmed && !noBarcodes && (
                         <div className="flex flex-wrap gap-1 mt-1.5">
                           {item.barcodes.map((b) => (
                             <span
                               key={b.psId}
-                              className={`text-[11px] px-2 py-1 rounded-lg border font-mono ${
+                              className={`text-[11px] px-2 py-1 rounded-lg border font-sans ${
                                 b.stock < item.qty
                                   ? 'border-red-200 bg-red-50 text-red-400'
                                   : 'border-gray-200 bg-gray-50 text-gray-500'
                               }`}
                             >
-                              {b.barcode}
-                              <span className="font-sans ml-1 text-gray-400">· {b.supplierName} · Tồn: {b.stock}</span>
+                              {b.supplierName} · Tồn: {b.stock}
                             </span>
                           ))}
                         </div>
@@ -2217,6 +2377,13 @@ function ExportOrderModal({ order, onClose, onDone }: { order: Order; onClose: (
           </button>
         </div>
       </div>
+
+      {showCamera && (
+        <BarcodeScannerModal
+          onDetected={(code) => { setShowCamera(false); handleScan(code) }}
+          onClose={() => setShowCamera(false)}
+        />
+      )}
     </Modal>
   )
 }
@@ -2224,7 +2391,9 @@ function ExportOrderModal({ order, onClose, onDone }: { order: Order; onClose: (
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function OrdersPage() {
-  const { profile, isAdmin, isAccountant, isWarehouse, isEmployee } = useAuth()
+  const { user, profile, isAdmin, isAccountant, isWarehouse, isEmployee } = useAuth()
+  // Chỉ admin@kimanh.com được xem toàn bộ lịch sử đơn hàng
+  const isSuperAdmin = user?.email === 'admin@kimanh.com'
   const queryClient = useQueryClient()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
@@ -2235,7 +2404,7 @@ export function OrdersPage() {
   const [printingOrder, setPrintingOrder] = useState<Order | null>(null)
   const [viewingOrder, setViewingOrder] = useState<Order | null>(null)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all')
+  const [statusFilters, setStatusFilters] = useState<Set<OrderStatus>>(new Set())
   const [monthFilter, setMonthFilter] = useState<string>(() => {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -2341,18 +2510,24 @@ export function OrdersPage() {
   ), [routeOrdersData])
 
   const { data: orders = [], isLoading } = useQuery({
-    queryKey: ['orders', profile?.id, isAdmin, isAccountant],
+    queryKey: ['orders', profile?.id, isAdmin, isAccountant, isSuperAdmin],
     queryFn: async () => {
       let query = supabase
         .from('orders')
-        .select('*, customer:customers(name, phone, address), employee:profiles(full_name), items:order_items(*, product:products(name, product_code, unit, quantity, cost_price)), notes:order_notes(*, profile:profiles(full_name)), source:order_sources(name), return_tickets(*)')
+        .select('*, customer:customers(name, phone, address), employee:profiles(full_name, phone), items:order_items(*, product:products(name, product_code, unit, quantity, cost_price)), notes:order_notes(*, profile:profiles(full_name)), source:order_sources(name), return_tickets(*)')
         .order('created_at', { ascending: false })
       if (isEmployee && profile) {
-        // Nhân viên: chỉ thấy đơn của mình (kể cả nháp)
+        // Nhân viên sale: chỉ thấy đơn của mình (kể cả nháp)
         query = query.eq('employee_id', profile.id)
       } else {
         // Admin/kế toán/kho: không thấy đơn nháp
         query = query.neq('status', 'draft')
+      }
+      // Tài khoản không phải superadmin chỉ xem được đơn trong 3 tháng gần nhất
+      if (!isSuperAdmin) {
+        const sixMonthsAgo = new Date()
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+        query = query.gte('created_at', sixMonthsAgo.toISOString())
       }
       const { data, error } = await query
       if (error) throw error
@@ -2405,11 +2580,30 @@ export function OrdersPage() {
     const matchSearch = !q || o.order_number.toLowerCase().includes(q)
       || (o.customer?.name ?? '').toLowerCase().includes(q)
       || (o.customer?.phone ?? '').includes(q)
-    const matchStatus = statusFilter === 'all' || o.status === statusFilter
+    const matchStatus = statusFilters.size === 0 || statusFilters.has(o.status)
     const matchMonth = monthFilter === 'all' || o.created_at.startsWith(monthFilter)
     const matchEmployee = employeeFilter === 'all' || o.employee_id === employeeFilter
     return matchSearch && matchStatus && matchMonth && matchEmployee
-  }), [orders, search, statusFilter, monthFilter, employeeFilter])
+  }), [orders, search, statusFilters, monthFilter, employeeFilter])
+
+  const baseFiltered = useMemo(() => orders.filter((o) => {
+    const q = search.toLowerCase()
+    const matchSearch = !q || o.order_number.toLowerCase().includes(q)
+      || (o.customer?.name ?? '').toLowerCase().includes(q)
+      || (o.customer?.phone ?? '').includes(q)
+    const matchMonth = monthFilter === 'all' || o.created_at.startsWith(monthFilter)
+    const matchEmployee = employeeFilter === 'all' || o.employee_id === employeeFilter
+    return matchSearch && matchMonth && matchEmployee
+  }), [orders, search, monthFilter, employeeFilter])
+
+  const toggleStatus = (s: OrderStatus) => {
+    setStatusFilters((prev) => {
+      const next = new Set(prev)
+      if (next.has(s)) next.delete(s)
+      else next.add(s)
+      return next
+    })
+  }
 
   // Phát hiện SĐT trùng trong danh sách đang hiển thị (sau filter)
   const duplicatePhones = useMemo(() => {
@@ -2483,25 +2677,35 @@ export function OrdersPage() {
               })}
             </select>
           </div>
-          {/* Row 2: nhân viên + trạng thái */}
-          <div className="flex gap-2">
-            {!isEmployee && (
-              <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="all">Tất cả nhân viên</option>
-                {availableEmployees.map(([id, name]) => (
-                  <option key={id} value={id}>{name}</option>
-                ))}
-              </select>
-            )}
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as OrderStatus | 'all')}
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="all">Tất Cả ({filtered.length})</option>
-              {STATUS_OPTIONS.map((s) => {
-                const cnt = filtered.filter((o) => o.status === s.value).length
-                return <option key={s.value} value={s.value}>{s.label}{cnt > 0 ? ` (${cnt})` : ''}</option>
-              })}
+          {/* Row 2: nhân viên */}
+          {!isEmployee && (
+            <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="all">Tất cả nhân viên</option>
+              {availableEmployees.map(([id, name]) => (
+                <option key={id} value={id}>{name}</option>
+              ))}
             </select>
+          )}
+          {/* Row 3: trạng thái chips (multi-select) */}
+          <div className="flex overflow-x-auto gap-1.5 pb-1">
+            <button onClick={() => setStatusFilters(new Set())}
+              className={`flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${statusFilters.size === 0 ? 'bg-gray-800 text-white border-gray-800' : 'bg-white border-gray-300 text-gray-600'}`}>
+              Tất Cả ({baseFiltered.length})
+            </button>
+            {STATUS_OPTIONS.map((s) => {
+              const cnt = baseFiltered.filter((o) => o.status === s.value).length
+              const active = statusFilters.has(s.value)
+              const cfg = ORDER_STATUS_CONFIG[s.value]
+              return (
+                <button key={s.value} onClick={() => toggleStatus(s.value)}
+                  className={`flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                    active ? `${cfg.bg} ${cfg.color} ${cfg.border}` : 'bg-white border-gray-300 text-gray-500'
+                  }`}>
+                  {s.label}{cnt > 0 ? ` (${cnt})` : ''}
+                </button>
+              )
+            })}
           </div>
         </div>
 
@@ -2530,17 +2734,18 @@ export function OrdersPage() {
               ))}
             </select>
           )}
-          <button onClick={() => setStatusFilter('all')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${statusFilter === 'all' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
-            Tất Cả ({filtered.length})
+          <button onClick={() => setStatusFilters(new Set())}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${statusFilters.size === 0 ? 'bg-gray-800 text-white border-gray-800' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+            Tất Cả ({baseFiltered.length})
           </button>
           {STATUS_OPTIONS.map((s) => {
-            const cnt = filtered.filter((o) => o.status === s.value).length
+            const cnt = baseFiltered.filter((o) => o.status === s.value).length
             const cfg = ORDER_STATUS_CONFIG[s.value]
+            const active = statusFilters.has(s.value)
             return (
-              <button key={s.value} onClick={() => setStatusFilter(s.value)}
+              <button key={s.value} onClick={() => toggleStatus(s.value)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                  statusFilter === s.value ? `${cfg.bg} ${cfg.color} ${cfg.border}` : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                  active ? `${cfg.bg} ${cfg.color} ${cfg.border}` : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
                 }`}>
                 {s.label}{cnt > 0 ? ` (${cnt})` : ''}
               </button>
@@ -2766,7 +2971,9 @@ export function OrdersPage() {
                             <tbody>
                               {items.map((item, i) => (
                                 <tr key={item.id} className={i < items.length - 1 ? 'border-b border-dashed border-green-400' : ''}>
-                                  <td className="py-1 pr-1 text-gray-300 w-3 align-top">✓</td>
+                                  <td className="py-1 pr-2 align-top whitespace-nowrap">
+                                    <span className="font-mono text-[10px] font-bold text-green-600">{item.product?.product_code ?? '—'}</span>
+                                  </td>
                                   <td className="py-1 text-gray-900 font-semibold leading-snug">{item.product?.name ?? '—'}</td>
                                   <td className={`py-1 text-right font-bold tabular-nums whitespace-nowrap pl-2 w-10 align-top ${item.product?.quantity !== undefined && item.quantity > item.product.quantity ? 'text-red-600' : 'text-blue-600'}`}>SL:{item.quantity}</td>
                                   <td className="py-1 text-right text-gray-600 font-medium tabular-nums whitespace-nowrap pl-2 w-28 align-top">{formatCurrency(item.unit_price)}</td>

@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, Pencil, Trash2, Package, Barcode, Search, ScanLine,
   ImageIcon, Printer, RefreshCw, Tag, Upload, Download,
-  ChevronDown, FileText, Star, Settings, HelpCircle, AlignJustify, Truck,
+  ChevronDown, FileText, Settings, HelpCircle, AlignJustify, Truck,
   Eye, EyeOff,
 } from 'lucide-react'
 import JsBarcode from 'jsbarcode'
@@ -17,7 +17,7 @@ import { PrintLabelModal } from '@/components/ui/PrintLabel'
 import { BarcodeScannerModal } from '@/components/ui/BarcodeScannerModal'
 import { formatCurrency, formatDateOnly, generateBarcode, generateProductCode, fmtThousands } from '@/utils/format'
 import { exportProductsCSV, downloadImportTemplate, parseCSV, mapCSVRow } from '@/utils/csvUtils'
-import type { Product, Category, Supplier, ProductSupplier } from '@/types'
+import type { Product, Category, Supplier, ProductSupplier, ProductBundle } from '@/types'
 import toast from 'react-hot-toast'
 
 // ── Barcode preview ───────────────────────────────────────────────────────────
@@ -466,13 +466,15 @@ export function ProductsPage() {
   const [scannerOpen, setScannerOpen] = useState(false)
   const [stockFilter, setStockFilter] = useState<'all' | 'in_stock' | 'out_of_stock' | 'low_stock'>('all')
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [createDropOpen, setCreateDropOpen] = useState(false)
   const [catDropOpen, setCatDropOpen] = useState(false)
-  const [showFavOnly, setShowFavOnly] = useState(false)
-  const [favIds, setFavIds] = useState<Set<string>>(new Set())
   const [revealedCost, setRevealedCost] = useState(false)
   const [revealedRatio, setRevealedRatio] = useState(false)
+  const [showBundles, setShowBundles] = useState(false)
+  const [showHidden, setShowHidden] = useState(false)
+  const [expandedBundleIds, setExpandedBundleIds] = useState<Set<string>>(new Set())
+  const toggleBundle = (id: string) =>
+    setExpandedBundleIds((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
 
   useEffect(() => {
     if (!createDropOpen && !catDropOpen) return
@@ -547,7 +549,22 @@ export function ProductsPage() {
     },
   })
 
-  const availQty = (p: { id: string; quantity: number }) => Math.max(0, p.quantity - (pendingQty[p.id] ?? 0))
+const { data: bundles = [] } = useQuery({
+    queryKey: ['product-bundles'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('product_bundles')
+        .select('*, items:bundle_items(*, product:products(id, name, product_code, sale_price, unit, quantity, image_url))')
+        .order('name')
+      return (data ?? []) as ProductBundle[]
+    },
+  })
+
+  const filteredBundles = bundles.filter((b) => {
+    if (!search) return true
+    const q = search.toLowerCase()
+    return b.name.toLowerCase().includes(q) || b.bundle_code.toLowerCase().includes(q)
+  })
 
   const existingCodes = products.map((p) => p.product_code)
 
@@ -644,26 +661,16 @@ export function ProductsPage() {
     onError: () => toast.error('Không thể xóa sản phẩm'),
   })
 
-  const deleteSelectedMutation = useMutation({
-    mutationFn: async () => {
-      let failed = 0
-      for (const id of selectedIds) {
-        await supabase.from('product_suppliers').delete().eq('product_id', id)
-        const { error } = await supabase.from('products').delete().eq('id', id)
-        if (error) failed++
-      }
-      if (failed > 0) throw new Error(`${failed} sản phẩm không thể xóa (đang được sử dụng trong đơn hàng)`)
+  const hideMutation = useMutation({
+    mutationFn: async ({ id, hide }: { id: string; hide: boolean }) => {
+      const { error } = await supabase.from('products').update({ is_hidden: hide }).eq('id', id)
+      if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: (_, { hide }) => {
       queryClient.invalidateQueries({ queryKey: ['products'] })
-      toast.success(`Đã xóa ${selectedIds.size} sản phẩm`)
-      setSelectedIds(new Set())
+      toast.success(hide ? 'Đã ẩn sản phẩm' : 'Đã hiện sản phẩm trở lại')
     },
-    onError: (err: Error) => {
-      queryClient.invalidateQueries({ queryKey: ['products'] })
-      toast.error(err.message)
-      setSelectedIds(new Set())
-    },
+    onError: () => toast.error('Không thể thực hiện'),
   })
 
   function openAdd() {
@@ -682,10 +689,6 @@ export function ProductsPage() {
     setEditingProduct(null)
   }
 
-  const toggleFav = useCallback((id: string) => {
-    setFavIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })
-  }, [])
-
   const countByCategory = products.reduce<Record<string, number>>((acc, p) => {
     acc[p.category_id] = (acc[p.category_id] ?? 0) + 1; return acc
   }, {})
@@ -693,29 +696,23 @@ export function ProductsPage() {
   const LOW_STOCK_THRESHOLD = 5
 
   const filtered = products.filter((p) => {
+    if (p.is_hidden) return false
     const matchCat = !selectedCategoryId || p.category_id === selectedCategoryId
-    const matchFav = !showFavOnly || favIds.has(p.id)
     const q = search.toLowerCase()
     const matchSearch = !q || p.name.toLowerCase().includes(q) || p.product_code.includes(q) || p.barcode.includes(q)
-    const avail = availQty(p)
     const matchStock =
       stockFilter === 'all' ? true
-      : stockFilter === 'in_stock' ? avail > 0
-      : stockFilter === 'out_of_stock' ? avail === 0
-      : avail > 0 && avail <= LOW_STOCK_THRESHOLD
-    return matchCat && matchFav && matchSearch && matchStock
+      : stockFilter === 'in_stock' ? p.quantity > 0
+      : stockFilter === 'out_of_stock' ? p.quantity === 0
+      : p.quantity > 0 && p.quantity <= LOW_STOCK_THRESHOLD
+    return matchCat && matchSearch && matchStock
   })
 
-  const allSelected = filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id))
-
-  function toggleSelectAll() {
-    if (allSelected) setSelectedIds(new Set())
-    else setSelectedIds(new Set(filtered.map((p) => p.id)))
-  }
-
-  function toggleSelect(id: string) {
-    setSelectedIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next })
-  }
+  const hiddenProducts = products.filter((p) => p.is_hidden)
+  const filteredHidden = hiddenProducts.filter((p) => {
+    const q = search.toLowerCase()
+    return !q || p.name.toLowerCase().includes(q) || p.product_code.includes(q) || p.barcode.includes(q)
+  })
 
   const selectedCategory = categories.find((c) => c.id === selectedCategoryId)
 
@@ -800,13 +797,13 @@ export function ProductsPage() {
       </div>
 
       {/* ── Stock filter chips ── */}
-      <div className="flex items-center gap-2 mb-3 flex-wrap">
+      <div className={`flex items-center gap-2 mb-3 flex-wrap ${showBundles || showHidden ? 'hidden' : ''}`}>
         {(
           [
             { key: 'all', label: 'Tất cả tồn kho' },
-            { key: 'in_stock', label: `Còn hàng (${products.filter((p) => availQty(p) > 0).length})` },
-            { key: 'out_of_stock', label: `Hết hàng (${products.filter((p) => availQty(p) === 0).length})` },
-            { key: 'low_stock', label: `Sắp hết ≤ ${LOW_STOCK_THRESHOLD} (${products.filter((p) => availQty(p) > 0 && availQty(p) <= LOW_STOCK_THRESHOLD).length})` },
+            { key: 'in_stock', label: `Còn hàng (${products.filter((p) => !p.is_hidden && p.quantity > 0).length})` },
+            { key: 'out_of_stock', label: `Hết hàng (${products.filter((p) => !p.is_hidden && p.quantity === 0).length})` },
+            { key: 'low_stock', label: `Sắp hết ≤ ${LOW_STOCK_THRESHOLD} (${products.filter((p) => !p.is_hidden && p.quantity > 0 && p.quantity <= LOW_STOCK_THRESHOLD).length})` },
           ] as const
         ).map(({ key, label }) => (
           <button
@@ -830,13 +827,6 @@ export function ProductsPage() {
       </div>
 
       {/* Selected actions bar */}
-      {selectedIds.size > 0 && (
-        <div className="mb-3 flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5">
-          <span className="text-sm font-medium text-blue-800">Đã chọn {selectedIds.size} sản phẩm</span>
-          <button onClick={() => deleteSelectedMutation.mutate()} className="text-xs text-red-600 hover:underline">Xóa đã chọn</button>
-          <button onClick={() => setSelectedIds(new Set())} className="ml-auto text-xs text-gray-500 hover:underline">Bỏ chọn</button>
-        </div>
-      )}
 
       {/* ══ MOBILE: category dropdown ══════════════════════════════════════════ */}
       <div className="lg:hidden mb-4 relative z-10">
@@ -870,10 +860,12 @@ export function ProductsPage() {
               <p className={`text-sm font-semibold leading-tight ${catDropOpen ? 'text-blue-700' : selectedCategoryId ? 'text-white' : 'text-gray-900'}`}>
                 {selectedCategoryId
                   ? categories.find((c) => c.id === selectedCategoryId)?.name ?? 'Danh mục'
+                  : showHidden ? 'Sản Phẩm Ẩn'
+                  : showBundles ? 'Bộ Sản Phẩm'
                   : 'Tất Cả Danh Mục'}
               </p>
               <p className={`text-xs leading-tight ${catDropOpen ? 'text-blue-500' : selectedCategoryId ? 'text-blue-100' : 'text-gray-400'}`}>
-                {filtered.length} sản phẩm · {categories.length} danh mục
+                {showHidden ? `${hiddenProducts.length} sản phẩm ẩn` : `${filtered.length} sản phẩm · ${categories.length} danh mục`}
               </p>
             </div>
           </div>
@@ -887,7 +879,7 @@ export function ProductsPage() {
         {catDropOpen && (
           <div className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden">
             <button
-              onClick={(e) => { e.stopPropagation(); setSelectedCategoryId(null); setSearch(''); setCatDropOpen(false) }}
+              onClick={(e) => { e.stopPropagation(); setSelectedCategoryId(null); setSearch(''); setShowBundles(false); setShowHidden(false); setCatDropOpen(false) }}
               className={`w-full flex items-center gap-3 px-4 py-3.5 transition-colors ${
                 !selectedCategoryId ? 'bg-blue-50' : 'hover:bg-gray-50'
               }`}
@@ -918,7 +910,7 @@ export function ProductsPage() {
               return (
                 <div key={cat.id}>
                   <button
-                    onClick={(e) => { e.stopPropagation(); setSelectedCategoryId(cat.id); setSearch(''); setCatDropOpen(false) }}
+                    onClick={(e) => { e.stopPropagation(); setSelectedCategoryId(cat.id); setSearch(''); setShowBundles(false); setShowHidden(false); setCatDropOpen(false) }}
                     className={`w-full flex items-center gap-3 px-4 py-3.5 transition-colors ${
                       isActive ? 'bg-blue-50' : 'hover:bg-gray-50'
                     }`}
@@ -962,6 +954,46 @@ export function ProductsPage() {
             {categories.length === 0 && (
               <div className="px-4 py-8 text-center text-sm text-gray-400">Chưa có danh mục nào</div>
             )}
+
+            <div className="h-px bg-gray-100 mx-4" />
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowBundles(true); setSelectedCategoryId(null); setSearch(''); setShowHidden(false); setCatDropOpen(false) }}
+              className={`w-full flex items-center gap-3 px-4 py-3.5 transition-colors ${showBundles ? 'bg-purple-50' : 'hover:bg-gray-50'}`}
+            >
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${showBundles ? 'bg-purple-600' : 'bg-gray-100'}`}>
+                <Package size={17} className={showBundles ? 'text-white' : 'text-gray-400'} />
+              </div>
+              <div className="flex-1 text-left">
+                <p className={`text-sm font-semibold ${showBundles ? 'text-purple-700' : 'text-gray-800'}`}>Bộ Sản Phẩm</p>
+                <p className="text-xs text-gray-400">{bundles.length} bộ</p>
+              </div>
+              <span className={`text-xs px-2 py-1 rounded-xl font-semibold flex-shrink-0 ${showBundles ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500'}`}>
+                {bundles.length}
+              </span>
+            </button>
+
+            {canEdit && (
+              <>
+                <div className="h-px bg-gray-100 mx-4" />
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowHidden(true); setShowBundles(false); setSelectedCategoryId(null); setSearch(''); setCatDropOpen(false) }}
+                  className={`w-full flex items-center gap-3 px-4 py-3.5 transition-colors ${showHidden ? 'bg-orange-50' : 'hover:bg-gray-50'}`}
+                >
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${showHidden ? 'bg-orange-500' : 'bg-gray-100'}`}>
+                    <EyeOff size={17} className={showHidden ? 'text-white' : 'text-gray-400'} />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <p className={`text-sm font-semibold ${showHidden ? 'text-orange-700' : 'text-gray-800'}`}>Sản Phẩm Ẩn</p>
+                    <p className="text-xs text-gray-400">{hiddenProducts.length} sản phẩm</p>
+                  </div>
+                  {hiddenProducts.length > 0 && (
+                    <span className={`text-xs px-2 py-1 rounded-xl font-semibold flex-shrink-0 ${showHidden ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {hiddenProducts.length}
+                    </span>
+                  )}
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -979,20 +1011,20 @@ export function ProductsPage() {
               )}
             </div>
             <button
-              onClick={() => { setSelectedCategoryId(null); setSearch('') }}
+              onClick={() => { setSelectedCategoryId(null); setSearch(''); setShowBundles(false); setShowHidden(false) }}
               className={`w-full text-left px-3 py-2.5 text-sm transition-colors border-l-2 flex-shrink-0 ${
-                !selectedCategoryId ? 'bg-blue-50 text-blue-700 font-semibold border-blue-500' : 'text-gray-500 hover:bg-blue-50 hover:text-blue-700 border-transparent'
+                !selectedCategoryId && !showBundles && !showHidden ? 'bg-blue-50 text-blue-700 font-semibold border-blue-500' : 'text-gray-500 hover:bg-blue-50 hover:text-blue-700 border-transparent'
               }`}
             >
               Tất Cả
             </button>
             <ul className="divide-y divide-gray-50 overflow-y-auto flex-1">
               {categories.map((cat) => {
-                const isActive = selectedCategoryId === cat.id
+                const isActive = selectedCategoryId === cat.id && !showBundles
                 return (
                   <li key={cat.id}>
                     <button
-                      onClick={() => { setSelectedCategoryId(cat.id); setSearch('') }}
+                      onClick={() => { setSelectedCategoryId(cat.id); setSearch(''); setShowBundles(false); setShowHidden(false) }}
                       className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm transition-colors border-l-2 ${
                         isActive ? 'bg-blue-50 text-blue-700 font-semibold border-blue-500' : 'text-gray-600 hover:bg-blue-50 hover:text-blue-700 border-transparent'
                       }`}
@@ -1009,46 +1041,334 @@ export function ProductsPage() {
                   </li>
                 )
               })}
+              <li>
+                <div className="h-px bg-gray-100 mx-2 my-1" />
+              </li>
+              <li>
+                <button
+                  onClick={() => { setShowBundles(true); setSelectedCategoryId(null); setSearch(''); setShowHidden(false) }}
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm transition-colors border-l-2 ${
+                    showBundles ? 'bg-purple-50 text-purple-700 font-semibold border-purple-500' : 'text-gray-600 hover:bg-purple-50 hover:text-purple-700 border-transparent'
+                  }`}
+                >
+                  <Package size={12} className={showBundles ? 'text-purple-500' : 'text-gray-400'} />
+                  <span className="flex-1 truncate text-left">Bộ Sản Phẩm</span>
+                  <span className={`text-xs px-1.5 rounded-full flex-shrink-0 ${showBundles ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500'}`}>
+                    {bundles.length}
+                  </span>
+                </button>
+              </li>
+              {canEdit && (
+                <li>
+                  <button
+                    onClick={() => { setShowHidden(true); setShowBundles(false); setSelectedCategoryId(null); setSearch('') }}
+                    className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm transition-colors border-l-2 ${
+                      showHidden ? 'bg-orange-50 text-orange-700 font-semibold border-orange-500' : 'text-gray-600 hover:bg-orange-50 hover:text-orange-700 border-transparent'
+                    }`}
+                  >
+                    <EyeOff size={12} className={showHidden ? 'text-orange-500' : 'text-gray-400'} />
+                    <span className="flex-1 truncate text-left">Sản Phẩm Ẩn</span>
+                    {hiddenProducts.length > 0 && (
+                      <span className={`text-xs px-1.5 rounded-full flex-shrink-0 ${showHidden ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {hiddenProducts.length}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              )}
             </ul>
           </div>
 
-          <button
-            onClick={() => setShowFavOnly((v) => !v)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm border transition-colors ${
-              showFavOnly ? 'bg-yellow-50 border-yellow-300 text-yellow-700' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-            }`}
-          >
-            <Star size={14} fill={showFavOnly ? 'currentColor' : 'none'} />
-            Yêu thích
-          </button>
         </aside>
 
         {/* RIGHT: table */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between mb-2 text-xs text-gray-500">
-            <span>{filtered.length}/{products.length} sản phẩm{selectedCategory ? ` trong "${selectedCategory.name}"` : ''}</span>
+            {showBundles
+              ? <span>{filteredBundles.length}/{bundles.length} bộ sản phẩm</span>
+              : showHidden
+                ? <span>{filteredHidden.length}/{hiddenProducts.length} sản phẩm đang ẩn</span>
+                : <span>{filtered.length}/{products.filter((p) => !p.is_hidden).length} sản phẩm{selectedCategory ? ` trong "${selectedCategory.name}"` : ''}</span>
+            }
           </div>
 
-          {isLoading ? (
-            <div className="flex justify-center py-16">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+          {/* ── Bundle search results (khi đang xem sản phẩm mà tìm khớp bundle) ── */}
+          {!showBundles && search && filteredBundles.length > 0 && (
+            <div className="mb-3">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-600 uppercase tracking-wide mb-1.5">
+                <Package size={12} />
+                Bộ Sản Phẩm ({filteredBundles.length})
+              </div>
+              <div className="bg-white rounded-xl border border-purple-200 overflow-hidden divide-y divide-gray-100">
+                {filteredBundles.map((bundle) => {
+                  const totalPrice = (bundle.items ?? []).reduce((s, bi) => s + (bi.product?.sale_price ?? 0) * bi.quantity, 0)
+                  return (
+                    <div key={bundle.id} className="flex items-center gap-3 px-4 py-3 hover:bg-purple-50 transition-colors">
+                      {bundle.image_url ? (
+                        <img src={bundle.image_url} alt={bundle.name} className="w-9 h-9 rounded-lg object-cover border border-gray-100 flex-shrink-0" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
+                          <Package size={14} className="text-purple-400" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-xs font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded">{bundle.bundle_code}</span>
+                          <span className="font-medium text-gray-900">{bundle.name}</span>
+                          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full whitespace-nowrap">Bộ SP · {bundle.items?.length ?? 0} món</span>
+                        </div>
+                        <p className="text-[11px] text-gray-400 mt-0.5 truncate">
+                          {(bundle.items ?? []).map((bi) => bi.product?.name).filter(Boolean).join(' · ')}
+                        </p>
+                      </div>
+                      <span className="font-semibold text-green-600 text-sm tabular-nums flex-shrink-0">
+                        {totalPrice > 0 ? formatCurrency(totalPrice) : '—'}
+                      </span>
+                      {canEdit && (
+                        <button
+                          onClick={() => { setShowBundles(true); setSearch('') }}
+                          className="text-xs text-purple-600 hover:underline flex-shrink-0"
+                        >
+                          Quản lý
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
-          ) : (
+          )}
+
+          {/* ── Bundle view ── */}
+          {showBundles && (
             <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[640px] text-sm">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="px-3 py-3 w-8">
-                        <input type="checkbox" checked={allSelected} onChange={toggleSelectAll}
-                          className="rounded border-gray-300 text-blue-600" />
-                      </th>
-                      <th className="px-2 py-3 w-8">
-                        <Star size={14} className="text-gray-400 mx-auto" />
-                      </th>
                       <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3 w-12">Ảnh</th>
-                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3">Mã hàng</th>
+                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3 w-20">Mã Bộ</th>
+                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3">Tên Bộ Sản Phẩm</th>
+                      <th className="text-center text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3 w-16">Danh Mục</th>
+                      <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3">Tổng Giá</th>
+                      <th className="text-center text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3 w-20">Số Món</th>
+                      <th className="hidden lg:table-cell text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3">Ngày Tạo</th>
+                      <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredBundles.map((bundle) => {
+                      const totalPrice = (bundle.items ?? []).reduce((s, bi) => s + (bi.product?.sale_price ?? 0) * bi.quantity, 0)
+                      const isExpanded = expandedBundleIds.has(bundle.id)
+                      return (
+                        <>
+                          <tr
+                            key={bundle.id}
+                            className="hover:bg-purple-50/40 transition-colors cursor-pointer"
+                            onClick={() => toggleBundle(bundle.id)}
+                          >
+                            <td className="px-3 py-2.5">
+                              {bundle.image_url ? (
+                                <img src={bundle.image_url} alt={bundle.name} className="w-9 h-9 rounded-lg object-cover border border-gray-100" />
+                              ) : (
+                                <div className="w-9 h-9 rounded-lg bg-purple-50 flex items-center justify-center">
+                                  <Package size={14} className="text-purple-400" />
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <span className="font-mono text-xs font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded">{bundle.bundle_code}</span>
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <p className="font-medium text-gray-900 leading-tight">{bundle.name}</p>
+                              {bundle.description && <p className="text-xs text-gray-400 mt-0.5 truncate max-w-xs">{bundle.description}</p>}
+                            </td>
+                            <td className="px-3 py-2.5 text-center">
+                              <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full whitespace-nowrap font-medium">Bộ SP</span>
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-semibold text-green-600 whitespace-nowrap">
+                              {totalPrice > 0 ? formatCurrency(totalPrice) : <span className="text-gray-300">--</span>}
+                            </td>
+                            <td className="px-3 py-2.5 text-center">
+                              <span className="inline-flex items-center justify-center w-7 h-7 bg-purple-100 text-purple-700 rounded-full text-xs font-bold">
+                                {bundle.items?.length ?? 0}
+                              </span>
+                            </td>
+                            <td className="hidden lg:table-cell px-3 py-2.5 text-gray-400 text-xs whitespace-nowrap">
+                              {formatDateOnly(bundle.created_at)}
+                            </td>
+                            <td className="px-3 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-2">
+                                {canEdit && (
+                                  <a
+                                    href="/categories"
+                                    onClick={(e) => { e.preventDefault(); window.location.hash = '/categories' }}
+                                    title="Chỉnh sửa trong Danh Mục"
+                                    className="inline-flex items-center gap-1 text-xs text-purple-600 hover:text-purple-800 hover:underline"
+                                  >
+                                    <Pencil size={13} />
+                                  </a>
+                                )}
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); toggleBundle(bundle.id) }}
+                                  className="p-0.5 text-gray-400 hover:text-purple-600 transition-colors"
+                                >
+                                  <ChevronDown size={15} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          {isExpanded && (bundle.items ?? []).map((bi) => (
+                            <tr key={bi.id} className="bg-purple-50/60 border-t border-purple-100/60">
+                              <td className="px-3 py-2 pl-6">
+                                {bi.product?.image_url ? (
+                                  <img src={bi.product.image_url} alt={bi.product.name} className="w-7 h-7 rounded object-cover border border-purple-100" />
+                                ) : (
+                                  <div className="w-7 h-7 rounded bg-white border border-purple-100 flex items-center justify-center">
+                                    <Package size={11} className="text-purple-300" />
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-3 py-2">
+                                <span className="font-mono text-[11px] text-gray-400">{bi.product?.product_code ?? ''}</span>
+                              </td>
+                              <td className="px-3 py-2">
+                                <span className="text-sm text-gray-800">{bi.product?.name ?? '—'}</span>
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <span className="text-xs bg-white border border-purple-200 text-purple-700 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
+                                  SL:{bi.quantity}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-right font-semibold text-green-600 whitespace-nowrap text-sm">
+                                {bi.product?.sale_price
+                                  ? formatCurrency(bi.product.sale_price * bi.quantity)
+                                  : <span className="text-gray-300">--</span>}
+                              </td>
+                              <td colSpan={3} />
+                            </tr>
+                          ))}
+                        </>
+                      )
+                    })}
+                    {filteredBundles.length === 0 && (
+                      <tr>
+                        <td colSpan={8} className="text-center py-16 text-gray-400">
+                          <Package size={40} className="mx-auto mb-2 opacity-40" />
+                          <p>{search ? 'Không tìm thấy bộ sản phẩm' : 'Chưa có bộ sản phẩm nào'}</p>
+                          {!search && canEdit && (
+                            <a href="/categories" className="mt-2 text-purple-600 hover:underline text-sm block">
+                              Tạo bộ sản phẩm trong Danh Mục
+                            </a>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ── Hidden products view ── */}
+          {showHidden && (
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-orange-200">
+              <div className="flex items-center gap-2 px-4 py-3 bg-orange-50 border-b border-orange-200">
+                <EyeOff size={15} className="text-orange-500" />
+                <span className="text-sm font-semibold text-orange-700">Sản Phẩm Ẩn</span>
+                <span className="text-xs text-orange-500 ml-1">— Sản phẩm đã ẩn không hiển thị ở danh sách chính và không thể bán</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[600px] text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3 w-12">Ảnh</th>
+                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3" style={{ minWidth: 90 }}>Mã hàng</th>
                       <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3">Tên hàng</th>
+                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3">Danh mục</th>
+                      <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3">Giá bán</th>
+                      <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3">Tồn kho</th>
+                      <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredHidden.map((product) => (
+                      <tr key={product.id} className="hover:bg-orange-50/40 transition-colors opacity-75">
+                        <td className="px-3 py-2.5">
+                          {(product.images?.[0] ?? product.image_url) ? (
+                            <img src={product.images?.[0] ?? product.image_url!} alt="" className="w-9 h-9 rounded-lg object-cover border border-gray-100 grayscale" />
+                          ) : (
+                            <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center">
+                              <Package size={14} className="text-gray-300" />
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span className="font-mono text-xs font-semibold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                            {product.product_code}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <p className="font-medium text-gray-500 leading-tight">{product.name}</p>
+                          <p className="text-xs text-gray-400 font-mono mt-0.5">{product.barcode}</p>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {product.category?.name
+                            ? <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full whitespace-nowrap">{product.category.name}</span>
+                            : <span className="text-gray-300 text-xs">--</span>
+                          }
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-semibold text-gray-400 whitespace-nowrap">
+                          {formatCurrency(product.sale_price)}
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <span className={`font-semibold ${product.quantity === 0 ? 'text-gray-400' : 'text-orange-500'}`}>
+                            {product.quantity}
+                          </span>
+                          <span className="text-xs text-gray-400 ml-1">{product.unit}</span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => hideMutation.mutate({ id: product.id, hide: false })}
+                              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-orange-600 hover:text-orange-800 hover:bg-orange-100 rounded-lg transition-colors"
+                              title="Hiện lại sản phẩm"
+                            >
+                              <Eye size={13} />
+                              Hiện lại
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredHidden.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="text-center py-12 text-gray-400">
+                          <EyeOff size={32} className="mx-auto mb-2 opacity-30" />
+                          <p>{search ? 'Không tìm thấy sản phẩm ẩn' : 'Chưa có sản phẩm nào được ẩn'}</p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {!showBundles && !showHidden && isLoading ? (
+            <div className="flex justify-center py-16">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+            </div>
+          ) : !showBundles && !showHidden && (
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[900px] text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="px-2 py-3 w-8"></th>
+                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3 w-12">Ảnh</th>
+                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3" style={{ minWidth: 90 }}>Mã hàng</th>
+                      <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3" style={{ minWidth: 220 }}>Tên hàng</th>
                       <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3">Danh mục</th>
                       {!isEmployee && (
                         <>
@@ -1095,20 +1415,11 @@ export function ProductsPage() {
                   <tbody className="divide-y divide-gray-100">
                     {filtered.map((product) => {
                       const pending = pendingQty[product.id] ?? 0
-                      const isSelected = selectedIds.has(product.id)
-                      const isFav = favIds.has(product.id)
                       const nccCount = product.product_suppliers?.length ?? 0
                       return (
-                        <tr key={product.id} className={`hover:bg-gray-50 transition-colors ${isSelected ? 'bg-blue-50' : ''}`}>
-                          <td className="px-3 py-3">
-                            <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(product.id)}
-                              className="rounded border-gray-300 text-blue-600" />
-                          </td>
+                        <tr key={product.id} className="hover:bg-gray-50 transition-colors">
                           <td className="px-2 py-3">
-                            <div className="flex items-center justify-center gap-0.5">
-                              <button onClick={() => toggleFav(product.id)}>
-                                <Star size={14} className={isFav ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'} />
-                              </button>
+                            <div className="flex items-center justify-center">
                               <button
                                 onClick={() => { setViewProduct(product); setViewImgIdx(0) }}
                                 className="p-0.5 text-gray-300 hover:text-teal-600 rounded"
@@ -1196,17 +1507,10 @@ export function ProductsPage() {
                             </td>
                           )}
                           <td className="px-3 py-2.5 text-right">
-                            {(() => {
-                              const avail = availQty(product)
-                              return (
-                                <>
-                                  <span className={`font-semibold ${avail === 0 ? 'text-red-500' : avail <= 5 ? 'text-orange-500' : 'text-gray-900'}`}>
-                                    {avail}
-                                  </span>
-                                  <span className="text-xs text-gray-400 ml-1">{product.unit}</span>
-                                </>
-                              )
-                            })()}
+                            <span className={`font-semibold ${product.quantity === 0 ? 'text-red-500' : product.quantity <= 5 ? 'text-orange-500' : 'text-gray-900'}`}>
+                              {product.quantity}
+                            </span>
+                            <span className="text-xs text-gray-400 ml-1">{product.unit}</span>
                           </td>
                           <td className="px-3 py-2.5 text-center">
                             {pending > 0
@@ -1232,6 +1536,21 @@ export function ProductsPage() {
                               {canEdit && (
                                 <button onClick={() => openEdit(product)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg">
                                   <Pencil size={15} />
+                                </button>
+                              )}
+                              {canEdit && (
+                                <button
+                                  onClick={() => {
+                                    if (product.quantity > 0) {
+                                      toast.error('Sản phẩm còn hàng trong kho, không thể ẩn')
+                                      return
+                                    }
+                                    hideMutation.mutate({ id: product.id, hide: true })
+                                  }}
+                                  className={`p-1.5 rounded-lg transition-colors ${product.quantity > 0 ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-orange-600 hover:bg-orange-50'}`}
+                                  title={product.quantity > 0 ? 'Còn hàng trong kho, không thể ẩn' : 'Ẩn sản phẩm'}
+                                >
+                                  <EyeOff size={15} />
                                 </button>
                               )}
                               {canDelete && (

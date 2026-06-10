@@ -37,8 +37,10 @@ export function formatDateOnly(dateString: string | null | undefined): string {
 
 export function generateBarcode(): string {
   const prefix = '893'
-  const randomPart = Math.floor(Math.random() * 10000000000).toString().padStart(10, '0')
-  return prefix + randomPart
+  const body = prefix + Math.floor(Math.random() * 1000000000).toString().padStart(9, '0')
+  const sum = body.split('').reduce((acc, d, i) => acc + parseInt(d) * (i % 2 === 0 ? 1 : 3), 0)
+  const check = (10 - (sum % 10)) % 10
+  return body + check
 }
 
 export function generateProductCode(existingCodes: string[] = []): string {
@@ -46,6 +48,16 @@ export function generateProductCode(existingCodes: string[] = []): string {
   let attempts = 0
   do {
     code = Math.floor(1000 + Math.random() * 9000).toString()
+    attempts++
+  } while (existingCodes.includes(code) && attempts < 200)
+  return code
+}
+
+export function generateBundleCode(existingCodes: string[] = []): string {
+  let code: string
+  let attempts = 0
+  do {
+    code = 'B' + Math.floor(100 + Math.random() * 900).toString()
     attempts++
   } while (existingCodes.includes(code) && attempts < 200)
   return code

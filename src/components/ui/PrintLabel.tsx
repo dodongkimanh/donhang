@@ -2,58 +2,107 @@ import { useState } from 'react'
 import JsBarcode from 'jsbarcode'
 import { Printer, X, Minus, Plus, Truck } from 'lucide-react'
 import type { Product } from '@/types'
-import { formatCurrency } from '@/utils/format'
 
-function buildBarcodeSVG(value: string, height: number): string {
+function isValidEan13(code: string): boolean {
+  if (!/^\d{13}$/.test(code)) return false
+  const sum = code.slice(0, 12).split('').reduce((acc, d, i) =>
+    acc + parseInt(d) * (i % 2 === 0 ? 1 : 3), 0)
+  return (10 - (sum % 10)) % 10 === parseInt(code[12])
+}
+
+function buildBarcodeSVG(value: string, height: number, barWidth: number): string {
+  const useEan13 = isValidEan13(value)
   const ns = 'http://www.w3.org/2000/svg'
   const svg = document.createElementNS(ns, 'svg')
-  svg.style.visibility = 'hidden'
   svg.style.position = 'absolute'
+  svg.style.left = '-9999px'
   document.body.appendChild(svg)
   try {
     JsBarcode(svg, value, {
-      format: 'CODE128',
-      width: 1.4,
+      format: useEan13 ? 'EAN13' : 'CODE128',
+      // EAN13 at width=1 → ~30mm total, fits in 34mm label without scaling → bar ≥ 0.264mm (scannable)
+      width: useEan13 ? 1.2 : barWidth,
       height,
       displayValue: true,
-      fontSize: 9,
-      margin: 2,
+      fontSize: 13,
+      // EAN13 has built-in quiet zones; extra margin would make it wider
+      margin: useEan13 ? 0 : 5,
       background: '#ffffff',
       lineColor: '#000000',
     })
   } finally {
     document.body.removeChild(svg)
   }
+  svg.style.cssText = ''
   return new XMLSerializer().serializeToString(svg)
 }
 
-function buildPrintHTML(
-  product: Product,
-  barcode: string,
-  copies: number,
-  labelSize: LabelSize,
-): string {
-  const barcodeSVG = buildBarcodeSVG(barcode, labelSize.barcodeH)
+function escHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
 
-  const singleLabel = `
-    <div class="label">
-      <div class="name">${escHtml(product.name)}</div>
-      <div class="codes">
-        <span class="product-code">Mã: <strong>${escHtml(product.product_code)}</strong></span>
-      </div>
-      <div class="barcode-wrap">${barcodeSVG}</div>
-      <div class="price">${formatCurrency(product.sale_price)}</div>
-    </div>
-  `
+interface LabelSize {
+  label: string
+  w: number
+  h: number
+  perRow: number
+  pageW: number
+  pageH: number
+  barcodeH: number
+  barcodeBarWidth: number
+  nameFontPt: number
+  codeFontPt: number
+  priceFontPt: number
+}
 
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>In Tem - ${escHtml(product.name)}</title>
-  <style>
+const LABEL_SIZES: LabelSize[] = [
+  { label: 'Cuộn 3 nhãn (104 × 22 mm)', w: 34, h: 22, perRow: 3, pageW: 104, pageH: 22, barcodeH: 35, barcodeBarWidth: 1.0, nameFontPt: 6, codeFontPt: 5, priceFontPt: 6 },
+]
+
+const COPY_PRESETS = [1, 5, 10, 20, 50]
+
+function buildLayoutCSS(size: LabelSize): string {
+  if (size.perRow === 1) {
+    return `
+    .label {
+      width: ${size.pageW}mm;
+      height: ${size.pageH}mm;
+      padding: 1.5mm 2mm;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      page-break-after: always;
+      break-after: page;
+      overflow: hidden;
+    }`
+  }
+  return `
+    .row {
+      display: flex;
+      width: ${size.pageW}mm;
+      height: ${size.pageH}mm;
+      page-break-after: always;
+      break-after: page;
+    }
+    .label {
+      flex: 1;
+      height: ${size.pageH}mm;
+      padding: 0.5mm 0.8mm;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      overflow: hidden;
+      border-right: 0.3mm dashed #ddd;
+    }
+    .label:last-child { border-right: none; }`
+}
+
+function buildSharedCSS(size: LabelSize): string {
+  return `
     @page {
-      size: ${labelSize.w}mm ${labelSize.h}mm;
+      size: ${size.pageW}mm ${size.pageH}mm;
       margin: 0;
     }
     * { box-sizing: border-box; }
@@ -63,19 +112,9 @@ function buildPrintHTML(
       font-family: Arial, Helvetica, sans-serif;
       background: #fff;
     }
-    .label {
-      width: ${labelSize.w}mm;
-      height: ${labelSize.h}mm;
-      padding: 1.5mm 2mm;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: space-between;
-      page-break-after: always;
-      overflow: hidden;
-    }
+    ${buildLayoutCSS(size)}
     .name {
-      font-size: ${labelSize.nameFontPt}pt;
+      font-size: ${size.nameFontPt}pt;
       font-weight: bold;
       text-align: center;
       max-width: 100%;
@@ -85,7 +124,7 @@ function buildPrintHTML(
       line-height: 1.2;
     }
     .codes {
-      font-size: ${labelSize.codeFontPt}pt;
+      font-size: ${size.codeFontPt}pt;
       color: #333;
       text-align: center;
     }
@@ -99,15 +138,54 @@ function buildPrintHTML(
     }
     .barcode-wrap svg { max-width: 100%; height: auto; }
     .price {
-      font-size: ${labelSize.priceFontPt}pt;
+      font-size: ${size.priceFontPt}pt;
       font-weight: bold;
       color: #c0392b;
       letter-spacing: 0.3px;
-    }
-  </style>
+    }`
+}
+
+function buildLabelsHTML(product: Product, barcode: string, copies: number, size: LabelSize): string {
+  const barcodeSVG = buildBarcodeSVG(barcode, size.barcodeH, size.barcodeBarWidth)
+  const singleLabel = `
+    <div class="label">
+      <div class="name">${escHtml(product.name)}</div>
+      <div class="codes">
+        <span class="product-code">Mã: <strong>${escHtml(product.product_code)}</strong></span>
+      </div>
+      <div class="barcode-wrap">${barcodeSVG}</div>
+    </div>`
+
+  if (size.perRow === 1) {
+    return Array(copies).fill(singleLabel).join('')
+  }
+  const rows = Math.ceil(copies / size.perRow)
+  return Array.from({ length: rows }, (_, r) =>
+    `<div class="row">${
+      Array.from({ length: size.perRow }, (_, c) =>
+        r * size.perRow + c < copies ? singleLabel : '<div class="label"></div>'
+      ).join('')
+    }</div>`
+  ).join('')
+}
+
+function buildPrintHTML(
+  product: Product,
+  barcode: string,
+  copies: number,
+  size: LabelSize,
+): string {
+  const labelsHTML = buildLabelsHTML(product, barcode, copies, size)
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>In Tem - ${escHtml(product.name)}</title>
+  <style>${buildSharedCSS(size)}</style>
 </head>
 <body>
-  ${Array(copies).fill(singleLabel).join('')}
+  ${labelsHTML}
   <script>
     window.onload = function() {
       setTimeout(function() { window.print(); window.close(); }, 400);
@@ -117,27 +195,38 @@ function buildPrintHTML(
 </html>`
 }
 
-function escHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+function buildBatchPrintHTML(
+  items: Array<{ product: Product; barcode: string; copies: number }>,
+  size: LabelSize,
+): string {
+  const allLabelsHTML = items
+    .filter(item => item.copies > 0)
+    .map(item => buildLabelsHTML(item.product, item.barcode, item.copies, size))
+    .join('')
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>In Tem - ${items.length} sản phẩm</title>
+  <style>${buildSharedCSS(size)}</style>
+</head>
+<body>
+  ${allLabelsHTML}
+  <script>
+    window.onload = function() {
+      setTimeout(function() { window.print(); window.close(); }, 400);
+    };
+  <\/script>
+</body>
+</html>`
 }
 
-interface LabelSize {
-  label: string
-  w: number
-  h: number
-  barcodeH: number
-  nameFontPt: number
-  codeFontPt: number
-  priceFontPt: number
+export interface BatchPrintItem {
+  product: Product
+  quantity: number
+  supplierId?: string | null
 }
-
-const LABEL_SIZES: LabelSize[] = [
-  { label: '50 × 30 mm (nhỏ)',  w: 50, h: 30, barcodeH: 28, nameFontPt: 7,  codeFontPt: 6,  priceFontPt: 7  },
-  { label: '60 × 40 mm (vừa)',  w: 60, h: 40, barcodeH: 38, nameFontPt: 9,  codeFontPt: 7,  priceFontPt: 8  },
-  { label: '80 × 50 mm (lớn)',  w: 80, h: 50, barcodeH: 46, nameFontPt: 11, codeFontPt: 9,  priceFontPt: 10 },
-]
-
-const COPY_PRESETS = [1, 5, 10, 20, 50]
 
 interface Props {
   product: Product | null
@@ -147,19 +236,16 @@ interface Props {
 export function PrintLabelModal({ product, onClose }: Props) {
   const [copies, setCopies] = useState(1)
   const [sizeIdx, setSizeIdx] = useState(0)
-  // Selected NCC supplier_id for barcode; null = use product.barcode (no NCCs)
   const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null)
 
   if (!product) return null
 
   const hasNccs = (product.product_suppliers?.length ?? 0) > 0
-  // Determine which NCC is selected (default: first one)
   const activeNcc = hasNccs
     ? (product.product_suppliers!.find((ps) => ps.supplier_id === selectedSupplierId)
        ?? product.product_suppliers![0])
     : null
 
-  // The barcode to print: NCC's own barcode if available, else product barcode
   const activeBarcodeValue = activeNcc?.barcode ?? product.barcode
   const activeNccName = activeNcc?.supplier?.name ?? null
 
@@ -174,8 +260,9 @@ export function PrintLabelModal({ product, onClose }: Props) {
     win.document.close()
   }
 
-  const px = 2.5
   const size = LABEL_SIZES[sizeIdx]
+  // Use larger scale for the narrow 3-label roll so the preview is visible
+  const px = size.perRow > 1 ? 4 : 2.5
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -203,7 +290,7 @@ export function PrintLabelModal({ product, onClose }: Props) {
             </div>
           </div>
 
-          {/* NCC Barcode Selector — shown when product has multiple NCCs */}
+          {/* NCC Barcode Selector */}
           {hasNccs && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1.5">
@@ -271,22 +358,47 @@ export function PrintLabelModal({ product, onClose }: Props) {
           {/* Label preview */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Xem trước</label>
-            <div className="flex justify-center">
-              <div
-                className="border-2 border-dashed border-gray-300 bg-white rounded shadow-sm flex flex-col items-center justify-between overflow-hidden"
-                style={{ width: size.w * px, height: size.h * px, padding: `${1.5 * px}px ${2 * px}px` }}
-              >
-                <p className="font-bold text-center leading-tight overflow-hidden" style={{ fontSize: size.nameFontPt * px * 0.6, maxWidth: '100%' }}>
-                  {product.name}
-                </p>
-                <p className="text-gray-500" style={{ fontSize: size.codeFontPt * px * 0.6 }}>
-                  Mã: <strong className="text-gray-800">{product.product_code}</strong>
-                </p>
-                <PreviewBarcode barcode={activeBarcodeValue} height={size.barcodeH * px * 0.55} />
-                <p className="font-bold text-red-600" style={{ fontSize: size.priceFontPt * px * 0.6 }}>
-                  {formatCurrency(product.sale_price)}
-                </p>
-              </div>
+            <div className="flex justify-center overflow-x-auto">
+              {size.perRow === 1 ? (
+                <div
+                  className="border-2 border-dashed border-gray-300 bg-white rounded shadow-sm flex flex-col items-center justify-between overflow-hidden flex-shrink-0"
+                  style={{ width: size.pageW * px, height: size.pageH * px, padding: `${1.5 * px}px ${2 * px}px` }}
+                >
+                  <p className="font-bold text-center leading-tight overflow-hidden" style={{ fontSize: size.nameFontPt * px * 0.6, maxWidth: '100%' }}>
+                    {product.name}
+                  </p>
+                  <p className="text-gray-500" style={{ fontSize: size.codeFontPt * px * 0.6 }}>
+                    Mã: <strong className="text-gray-800">{product.product_code}</strong>
+                  </p>
+                  <PreviewBarcode barcode={activeBarcodeValue} height={size.barcodeH * px * 0.55} />
+                </div>
+              ) : (
+                <div
+                  className="border-2 border-dashed border-gray-300 bg-white rounded shadow-sm flex flex-row overflow-hidden flex-shrink-0"
+                  style={{ width: size.pageW * px, height: size.pageH * px }}
+                >
+                  {Array.from({ length: size.perRow }, (_, i) => (
+                    <div
+                      key={i}
+                      className="flex flex-col items-center justify-between overflow-hidden"
+                      style={{
+                        flex: 1,
+                        height: '100%',
+                        padding: `${0.5 * px}px ${0.8 * px}px`,
+                        borderRight: i < size.perRow - 1 ? '1px dashed #d1d5db' : 'none',
+                      }}
+                    >
+                      <p className="font-bold text-center leading-tight overflow-hidden truncate w-full" style={{ fontSize: size.nameFontPt * px * 0.6 }}>
+                        {product.name}
+                      </p>
+                      <p className="text-gray-500" style={{ fontSize: size.codeFontPt * px * 0.6 }}>
+                        {product.product_code}
+                      </p>
+                      <PreviewBarcode barcode={activeBarcodeValue} height={size.barcodeH * px * 0.55} />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             {activeNccName && (
               <p className="text-center text-xs text-indigo-600 mt-1.5 font-medium flex items-center justify-center gap-1">
@@ -359,6 +471,123 @@ export function PrintLabelModal({ product, onClose }: Props) {
             >
               <Printer size={16} />
               In {copies} Tem
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function PrintBatchLabelModal({ items, onClose }: { items: BatchPrintItem[] | null; onClose: () => void }) {
+  const [copies, setCopies] = useState<Record<string, number>>(() =>
+    items ? Object.fromEntries(items.map(i => [i.product.id, 0])) : {}
+  )
+
+  if (!items) return null
+
+  const size = LABEL_SIZES[0]
+
+  function handlePrint() {
+    const printItems = items!
+      .map(item => {
+        const ncc = item.product.product_suppliers?.find(ps => ps.supplier_id === item.supplierId)
+                 ?? item.product.product_suppliers?.[0]
+        const barcode = ncc?.barcode ?? item.product.barcode ?? ''
+        return { product: item.product, barcode, copies: copies[item.product.id] ?? 1 }
+      })
+      .filter(i => i.copies > 0 && i.barcode)
+
+    if (printItems.length === 0) {
+      alert('Không có tem nào để in')
+      return
+    }
+
+    const win = window.open('', '_blank', 'width=800,height=600,menubar=no,toolbar=no')
+    if (!win) {
+      alert('Trình duyệt chặn popup. Vui lòng cho phép popup từ trang này.')
+      return
+    }
+    win.document.write(buildBatchPrintHTML(printItems, size))
+    win.document.close()
+  }
+
+  const totalCopies = Object.values(copies).reduce((s, c) => s + c, 0)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative bg-white w-full max-w-lg rounded-t-2xl sm:rounded-xl shadow-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0">
+          <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+            <Printer size={17} className="text-blue-600" />
+            In Tem Tất Cả Sản Phẩm
+          </h2>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="text-left px-5 py-2.5 font-semibold text-gray-500 text-xs uppercase tracking-wide">Sản Phẩm</th>
+                <th className="text-right px-4 py-2.5 font-semibold text-gray-500 text-xs uppercase tracking-wide w-20">SL Nhập</th>
+                <th className="text-center px-4 py-2.5 font-semibold text-gray-500 text-xs uppercase tracking-wide w-28">Số Tem</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {items.map(item => {
+                const ncc = item.product.product_suppliers?.find(ps => ps.supplier_id === item.supplierId)
+                         ?? item.product.product_suppliers?.[0]
+                return (
+                  <tr key={item.product.id} className="hover:bg-gray-50">
+                    <td className="px-5 py-3">
+                      <p className="font-medium text-gray-900">{item.product.name}</p>
+                      {ncc?.supplier?.name && (
+                        <p className="text-xs text-indigo-600 mt-0.5 flex items-center gap-1">
+                          <Truck size={10} /> {ncc.supplier.name}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-600 font-medium">{item.quantity}</td>
+                    <td className="px-4 py-3">
+                      <input
+                        type="number"
+                        min={0}
+                        max={200}
+                        value={copies[item.product.id] ?? 0}
+                        onChange={e => setCopies(prev => ({
+                          ...prev,
+                          [item.product.id]: Math.max(0, Math.min(200, parseInt(e.target.value) || 0))
+                        }))}
+                        className="w-full text-center px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="px-5 py-4 border-t bg-gray-50 flex items-center justify-between flex-shrink-0">
+          <p className="text-sm text-gray-500">
+            Tổng: <span className="font-semibold text-gray-800">{totalCopies}</span> tem ·{' '}
+            <span className="text-gray-600">{items.length} sản phẩm</span>
+          </p>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-100 transition-colors">
+              Đóng
+            </button>
+            <button
+              onClick={handlePrint}
+              disabled={totalCopies === 0}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg text-sm font-semibold transition-colors"
+            >
+              <Printer size={15} />
+              In {totalCopies} Tem
             </button>
           </div>
         </div>

@@ -273,7 +273,7 @@ export function DashboardPage() {
     { title: 'Tổng Khách Hàng',  value: customerCount, icon: <Users size={24} />,        color: 'bg-purple-500' },
   ]
 
-  const empChartHeight = Math.max(200, salesByEmployee.length * 72 + 80)
+  const empChartHeight = Math.max(120, salesByEmployee.length * 36 + 40)
 
   // ── Legend style shared ──────────────────────────────────────────────────
   const legendStyle = { fontSize: 11, paddingTop: 8 }
@@ -397,7 +397,7 @@ export function DashboardPage() {
                     name={STATUS_LABELS[status] ?? status}
                     stackId="a"
                     fill={STATUS_COLORS[status] ?? '#94a3b8'}
-                    barSize={26}
+                    barSize={12}
                   >
                     <LabelList
                       dataKey={`_lbl_${status}`}

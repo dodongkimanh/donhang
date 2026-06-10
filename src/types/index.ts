@@ -60,6 +60,7 @@ export interface Product {
   description?: string
   image_url?: string
   images?: string[]
+  is_hidden?: boolean
   created_at: string
   updated_at: string
   category?: Category
@@ -247,6 +248,26 @@ export interface Attendance {
   note?: string
   created_at: string
   employee?: Pick<Profile, 'id' | 'full_name' | 'role'>
+}
+
+export interface BundleItem {
+  id: string
+  bundle_id: string
+  product_id: string
+  quantity: number
+  created_at: string
+  product?: Pick<Product, 'id' | 'name' | 'product_code' | 'sale_price' | 'unit' | 'quantity' | 'image_url'>
+}
+
+export interface ProductBundle {
+  id: string
+  name: string
+  bundle_code: string
+  description?: string
+  image_url?: string
+  created_at: string
+  updated_at: string
+  items?: BundleItem[]
 }
 
 export interface Database {

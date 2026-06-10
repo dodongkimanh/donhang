@@ -6,7 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { BulkImportPage } from '@/components/ui/BulkImportModal'
-import { PrintLabelModal } from '@/components/ui/PrintLabel'
+import { PrintLabelModal, PrintBatchLabelModal, type BatchPrintItem } from '@/components/ui/PrintLabel'
 import { StockAdjustmentPage } from '@/components/ui/StockAdjustmentPage'
 import { StockCheckPage, type CheckResult } from '@/components/ui/StockCheckPage'
 import { formatCurrency, formatDate, generateBarcode, fmtThousands } from '@/utils/format'
@@ -88,6 +88,7 @@ export function InventoryPage() {
     setDateTo(end)
   }
   const [printProductId, setPrintProductId] = useState<string | null>(null)
+  const [printBatchKey, setPrintBatchKey] = useState<string | null>(null)
   const [isAdjustOpen, setIsAdjustOpen] = useState(false)
   const [isCheckOpen, setIsCheckOpen]   = useState(false)
   const [checkResult, setCheckResult]   = useState<CheckResult | null>(null)
@@ -979,18 +980,18 @@ export function InventoryPage() {
       ) : (
         <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px] text-sm">
+            <table className="w-full text-sm table-fixed" style={{ minWidth: 1100 }}>
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Loại</th>
-                  <th className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Sản Phẩm</th>
-                  <th className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Nhà Cung Cấp</th>
-                  <th className="text-right font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Số Lượng</th>
-                  <th className="text-right font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Đơn Giá</th>
-                  <th className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Ghi Chú</th>
-                  <th className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Người GN</th>
-                  <th className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Thời Gian</th>
-                  <th className="px-4 py-3"></th>
+                  <th style={{ width: 100 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Loại</th>
+                  <th style={{ width: 210 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Sản Phẩm</th>
+                  <th style={{ width: 150 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Nhà Cung Cấp</th>
+                  <th style={{ width: 80 }} className="text-right font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Số Lượng</th>
+                  <th style={{ width: 110 }} className="text-right font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Đơn Giá</th>
+                  <th style={{ width: 170 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Ghi Chú</th>
+                  <th style={{ width: 140 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Người GN</th>
+                  <th style={{ width: 130 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Thời Gian</th>
+                  <th style={{ width: 56 }} className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -1114,10 +1115,18 @@ export function InventoryPage() {
                             >
                               <ChevronDown size={15} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                             </button>
-                            {!isMulti && (
+                            {!isMulti ? (
                               <button
                                 onClick={(e) => { e.stopPropagation(); setPrintProductId(first.product_id) }}
                                 title="In tem sản phẩm"
+                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              >
+                                <Printer size={15} />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setPrintBatchKey(key) }}
+                                title="In tem tất cả sản phẩm"
                                 className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                               >
                                 <Printer size={15} />
@@ -1559,6 +1568,20 @@ export function InventoryPage() {
       <PrintLabelModal
         product={printProduct}
         onClose={() => setPrintProductId(null)}
+      />
+
+      {/* ── Print Batch Label Modal ── */}
+      <PrintBatchLabelModal
+        items={(() => {
+          if (!printBatchKey) return null
+          const batchTxs = transactions.filter(t => t.type !== 'adjustment' && getTxGroupKey(t) === printBatchKey)
+          return batchTxs.reduce<BatchPrintItem[]>((acc, tx) => {
+            const product = products.find(p => p.id === tx.product_id)
+            if (product) acc.push({ product, quantity: tx.quantity, supplierId: tx.supplier_id })
+            return acc
+          }, [])
+        })()}
+        onClose={() => setPrintBatchKey(null)}
       />
 
       {/* ── Modal Ghi Nhận ── */}

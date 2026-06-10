@@ -418,16 +418,16 @@ export function StockCallPage() {
           <div className="overflow-x-auto">
             <table
               className="w-full text-sm table-fixed"
-              style={{ minWidth: canManage ? 1220 : 920 }}
+              style={{ minWidth: canManage ? 1420 : 1080 }}
             >
               <thead>
                 <tr className="bg-orange-50 border-b border-orange-200">
                   <th style={{ width: 148 }} className="text-left text-xs font-bold text-gray-900 uppercase tracking-wide px-4 py-2.5">Mã Đơn</th>
                   <th style={{ width: 140 }} className="text-left text-xs font-bold text-gray-900 uppercase tracking-wide px-4 py-2.5">Khách Hàng</th>
-                  <th style={{ width: 200 }} className="text-left text-xs font-bold text-gray-900 uppercase tracking-wide px-4 py-2.5">Sản Phẩm</th>
+                  <th style={{ width: 280 }} className="text-left text-xs font-bold text-gray-900 uppercase tracking-wide px-4 py-2.5">Sản Phẩm</th>
                   <th style={{ width: 130 }} className="text-left text-xs font-bold text-gray-900 uppercase tracking-wide px-4 py-2.5">Trạng Thái</th>
                   <th style={{ width: 110 }} className="text-left text-xs font-bold text-gray-900 uppercase tracking-wide px-4 py-2.5">Sale</th>
-                  <th className="text-left text-xs font-bold text-gray-900 uppercase tracking-wide px-4 py-2.5">Ghi Chú Đơn</th>
+                  <th style={{ width: 216 }} className="text-left text-xs font-bold text-gray-900 uppercase tracking-wide px-4 py-2.5">Ghi Chú Đơn</th>
                   {canManage && (
                     <th style={{ width: 300 }} className="text-left text-xs font-bold text-gray-900 uppercase tracking-wide px-4 py-2.5">Ghi Chú Kho</th>
                   )}

@@ -96,7 +96,7 @@ export function TopNav() {
         </div>
 
         {/* Desktop nav links */}
-        <nav className="hidden lg:flex items-center gap-0.5 flex-1 overflow-x-auto">
+        <nav className="hidden lg:flex items-center gap-0.5 flex-1 overflow-x-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
           {visibleItems.map((item) => (
             <NavLink
               key={item.to}

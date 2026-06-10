@@ -11,72 +11,67 @@ interface Props {
 export function BarcodeScannerModal({ onDetected, onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const controlsRef = useRef<IScannerControls | null>(null)
-  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([])
-  const [cameraIdx, setCameraIdx] = useState(0)
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
+  const [hasMultipleCameras, setHasMultipleCameras] = useState(false)
   const [status, setStatus] = useState<'loading' | 'scanning' | 'error'>('loading')
   const [errorMsg, setErrorMsg] = useState('')
   const [lastBarcode, setLastBarcode] = useState('')
   const cooldownRef = useRef(false)
 
-  // List cameras on mount
+  // Detect number of cameras (labels may be empty before permission, so just count)
   useEffect(() => {
-    BrowserMultiFormatReader.listVideoInputDevices()
+    navigator.mediaDevices?.enumerateDevices()
       .then((devices) => {
-        if (!devices.length) {
-          setStatus('error')
-          setErrorMsg('Không tìm thấy camera nào trên thiết bị này.')
-          return
-        }
-        // prefer back camera on mobile
-        const backIdx = devices.findIndex((d) =>
-          /back|rear|environment/i.test(d.label)
-        )
-        setCameras(devices)
-        setCameraIdx(backIdx >= 0 ? backIdx : 0)
+        setHasMultipleCameras(devices.filter((d) => d.kind === 'videoinput').length > 1)
       })
-      .catch(() => {
-        setStatus('error')
-        setErrorMsg('Không thể truy cập camera. Vui lòng cấp quyền camera.')
-      })
+      .catch(() => {})
   }, [])
 
-  // Start/restart scanner when camera changes
+  // Start/restart scanner when facingMode changes
   useEffect(() => {
-    if (!cameras.length || !videoRef.current) return
+    if (!videoRef.current) return
 
     const reader = new BrowserMultiFormatReader()
-    const deviceId = cameras[cameraIdx]?.deviceId
     cooldownRef.current = false
     setStatus('loading')
     setLastBarcode('')
 
     reader
-      .decodeFromVideoDevice(deviceId, videoRef.current, (result, err, controls) => {
-        // store controls for cleanup
-        if (controls) controlsRef.current = controls
+      .decodeFromConstraints(
+        {
+          video: {
+            facingMode: { ideal: facingMode },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+        },
+        videoRef.current,
+        (result, err, controls) => {
+          if (controls) controlsRef.current = controls
 
-        if (result) {
-          if (cooldownRef.current) return
-          cooldownRef.current = true
-          const text = result.getText()
-          setLastBarcode(text)
-          setStatus('scanning')
-          setTimeout(() => {
-            controls?.stop()
-            controlsRef.current = null
-            onDetected(text)
-            onClose()
-          }, 600)
-          return
+          if (result) {
+            if (cooldownRef.current) return
+            cooldownRef.current = true
+            const text = result.getText()
+            setLastBarcode(text)
+            setStatus('scanning')
+            setTimeout(() => {
+              controls?.stop()
+              controlsRef.current = null
+              onDetected(text)
+              onClose()
+            }, 600)
+            return
+          }
+
+          if (err instanceof NotFoundException) return
+
+          if (err) {
+            setStatus('error')
+            setErrorMsg('Lỗi quét mã. Thử đổi camera hoặc tải lại.')
+          }
         }
-
-        if (err instanceof NotFoundException) return // normal: no barcode in frame
-
-        if (err) {
-          setStatus('error')
-          setErrorMsg('Lỗi quét mã. Thử đổi camera hoặc tải lại.')
-        }
-      })
+      )
       .then((controls) => {
         controlsRef.current = controls
         setStatus('scanning')
@@ -90,107 +85,97 @@ export function BarcodeScannerModal({ onDetected, onClose }: Props) {
       controlsRef.current?.stop()
       controlsRef.current = null
     }
-  }, [cameras, cameraIdx]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [facingMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function switchCamera() {
     controlsRef.current?.stop()
     controlsRef.current = null
-    setCameraIdx((i) => (i + 1) % cameras.length)
+    setFacingMode((f) => (f === 'environment' ? 'user' : 'environment'))
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
-      <div className="relative bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-black">
+      {/* Full-screen video */}
+      <video
+        ref={videoRef}
+        className="w-full h-full object-cover"
+        muted
+        playsInline
+        autoPlay
+      />
 
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 bg-gray-800">
+      {/* Top bar */}
+      <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/80 to-transparent">
+        <div className="flex items-center justify-between px-4 py-4">
           <div className="flex items-center gap-2 text-white">
-            <Scan size={18} className="text-blue-400" />
-            <span className="text-sm font-semibold">Quét Mã Vạch</span>
+            <Scan size={20} className="text-blue-400" />
+            <span className="font-semibold">Quét Mã Vạch</span>
           </div>
           <button
             onClick={() => { controlsRef.current?.stop(); onClose() }}
-            className="p-1.5 hover:bg-gray-700 rounded-lg transition-colors text-gray-300 hover:text-white"
+            className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors text-white"
           >
-            <X size={18} />
+            <X size={20} />
           </button>
         </div>
+      </div>
 
-        {/* Camera view */}
-        <div className="relative bg-black aspect-[4/3] flex items-center justify-center">
-          <video
-            ref={videoRef}
-            className="w-full h-full object-cover"
-            muted
-            playsInline
-            autoPlay
-          />
-
-          {/* Scanning overlay */}
-          {status === 'scanning' && !lastBarcode && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="relative w-52 h-36">
-                <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-blue-400 rounded-tl" />
-                <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-blue-400 rounded-tr" />
-                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-blue-400 rounded-bl" />
-                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-blue-400 rounded-br" />
-                <div className="absolute left-2 right-2 h-0.5 bg-blue-400 opacity-80 animate-scan-line" />
-              </div>
-            </div>
-          )}
-
-          {/* Success overlay */}
-          {lastBarcode && (
-            <div className="absolute inset-0 flex items-center justify-center bg-green-500/30">
-              <div className="bg-green-600 text-white px-4 py-2.5 rounded-xl text-center shadow-lg">
-                <p className="text-xs opacity-80 mb-0.5">Đã quét được</p>
-                <p className="font-bold font-mono text-sm">{lastBarcode}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Loading */}
-          {status === 'loading' && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-white gap-2">
-              <Camera size={32} className="animate-pulse text-blue-400" />
-              <p className="text-sm text-gray-300">Đang khởi động camera...</p>
-            </div>
-          )}
-
-          {/* Error */}
-          {status === 'error' && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-white gap-3 px-6 text-center">
-              <CameraOff size={32} className="text-red-400" />
-              <p className="text-sm text-gray-300">{errorMsg}</p>
-            </div>
-          )}
+      {/* Scanning frame */}
+      {status === 'scanning' && !lastBarcode && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: 60 }}>
+          <div className="relative" style={{ width: '78%', height: '28%' }}>
+            {/* corners */}
+            <div className="absolute top-0 left-0 w-7 h-7 border-t-[3px] border-l-[3px] border-white" />
+            <div className="absolute top-0 right-0 w-7 h-7 border-t-[3px] border-r-[3px] border-white" />
+            <div className="absolute bottom-0 left-0 w-7 h-7 border-b-[3px] border-l-[3px] border-white" />
+            <div className="absolute bottom-0 right-0 w-7 h-7 border-b-[3px] border-r-[3px] border-white" />
+          </div>
         </div>
+      )}
 
-        {/* Footer */}
-        <div className="px-4 py-3 bg-gray-800 flex items-center justify-between gap-2">
-          <p className="text-xs text-gray-400 flex-1">
-            {status === 'scanning' && !lastBarcode && 'Hướng camera vào mã vạch sản phẩm'}
+      {/* Success overlay */}
+      {lastBarcode && (
+        <div className="absolute inset-0 flex items-center justify-center bg-green-500/30">
+          <div className="bg-green-600 text-white px-6 py-4 rounded-2xl text-center shadow-2xl">
+            <p className="text-sm opacity-80 mb-1">Đã quét được</p>
+            <p className="font-bold font-mono text-lg">{lastBarcode}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Loading overlay */}
+      {status === 'loading' && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-white gap-3 bg-black/60">
+          <Camera size={40} className="animate-pulse text-blue-400" />
+          <p className="text-gray-300">Đang khởi động camera...</p>
+        </div>
+      )}
+
+      {/* Error overlay */}
+      {status === 'error' && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-white gap-4 px-8 text-center bg-black/80">
+          <CameraOff size={40} className="text-red-400" />
+          <p className="text-gray-300">{errorMsg}</p>
+        </div>
+      )}
+
+      {/* Bottom bar */}
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent">
+        <div className="flex items-center justify-between px-4 py-5">
+          <p className="text-sm text-gray-300">
+            {status === 'scanning' && !lastBarcode && 'Đặt mã vạch vào trong khung để quét.'}
           </p>
-          {cameras.length > 1 && (
+          {hasMultipleCameras && (
             <button
               onClick={switchCamera}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded-lg text-xs transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-full text-sm transition-colors"
             >
-              <RefreshCw size={13} />
+              <RefreshCw size={14} />
               Đổi camera
             </button>
           )}
         </div>
       </div>
-
-      <style>{`
-        @keyframes scan-line {
-          0%   { top: 8px; opacity: 1; }
-          50%  { top: calc(100% - 8px); opacity: 0.6; }
-          100% { top: 8px; opacity: 1; }
-        }
-        .animate-scan-line { animation: scan-line 1.8s ease-in-out infinite; }
-      `}</style>
     </div>
   )
 }

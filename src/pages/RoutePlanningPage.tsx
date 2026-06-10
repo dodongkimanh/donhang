@@ -23,7 +23,7 @@ type RouteOrderRow = {
     final_amount: number
     created_at: string
     note?: string
-    customer?: { name: string; phone?: string }
+    customer?: { name: string; phone?: string; address?: string }
     employee?: { full_name: string }
     items?: Array<{ id: string; quantity: number; unit_price: number; product?: { name: string; unit: string } }>
   }
@@ -188,7 +188,7 @@ export function RoutePlanningPage() {
             id, created_at, warehouse_note,
             order:orders(
               id, order_number, status, final_amount, created_at, note,
-              customer:customers(name, phone),
+              customer:customers(name, phone, address),
               employee:profiles(full_name),
               items:order_items(id, quantity, unit_price, product:products(name, unit))
             )
@@ -433,18 +433,18 @@ export function RoutePlanningPage() {
                   </div>
                 ) : (
                   <div className="border-t border-gray-100 overflow-x-auto">
-                    <table className="w-full text-sm table-fixed" style={{ minWidth: canManage ? 1080 : 860 }}>
+                    <table className="w-full text-sm table-fixed" style={{ minWidth: canManage ? 1260 : 1060 }}>
                       <thead>
                         <tr className="bg-gray-50 border-b border-gray-100">
                           <th className="text-left text-xs font-bold text-gray-900 px-3 py-2.5" style={{ width: 120 }}>Mã Đơn</th>
-                          <th className="text-left text-xs font-bold text-gray-900 px-3 py-2.5" style={{ width: 140 }}>Khách Hàng</th>
-                          <th className="text-left text-xs font-bold text-gray-900 px-3 py-2.5" style={{ width: 180 }}>Sản Phẩm</th>
+                          <th className="text-left text-xs font-bold text-gray-900 px-3 py-2.5" style={{ width: 200 }}>Khách Hàng</th>
+                          <th className="text-left text-xs font-bold text-gray-900 px-3 py-2.5" style={{ width: 280 }}>Sản Phẩm</th>
                           <th className="text-left text-xs font-bold text-gray-900 px-3 py-2.5" style={{ width: 110 }}>Tổng Tiền</th>
-                          <th className="text-left text-xs font-bold text-gray-900 px-3 py-2.5" style={{ width: 130 }}>Trạng Thái</th>
+                          <th className="text-left text-xs font-bold text-gray-900 px-3 py-2.5" style={{ width: 120 }}>Trạng Thái</th>
                           <th className="text-left text-xs font-bold text-gray-900 px-3 py-2.5" style={{ width: 100 }}>Sale</th>
-                          <th className="text-left text-xs font-bold text-gray-900 px-3 py-2.5">Ghi Chú Đơn</th>
+                          <th className="text-left text-xs font-bold text-gray-900 px-3 py-2.5" style={{ width: 150 }}>Ghi Chú Đơn</th>
                           {canManage && (
-                            <th className="text-left text-xs font-bold text-gray-900 px-3 py-2.5">Ghi Chú Kho</th>
+                            <th className="text-left text-xs font-bold text-gray-900 px-3 py-2.5" style={{ width: 150 }}>Ghi Chú Kho</th>
                           )}
                           <th style={{ width: 56 }} className="px-2 py-2.5" />
                         </tr>
@@ -466,29 +466,34 @@ export function RoutePlanningPage() {
                               </td>
 
                               {/* Khách hàng */}
-                              <td className="px-3 py-2.5">
-                                <p className="font-semibold text-gray-900 text-sm leading-snug">
+                              <td className="px-3 py-2.5 max-w-0">
+                                <p className="font-semibold text-gray-900 text-sm leading-snug truncate" title={o.customer?.name}>
                                   {o.customer?.name ?? 'Khách lẻ'}
                                 </p>
                                 {o.customer?.phone && (
-                                  <p className="text-xs text-orange-500 mt-0.5">{o.customer.phone}</p>
+                                  <p className="text-xs text-orange-500 mt-0.5 whitespace-nowrap">{o.customer.phone}</p>
+                                )}
+                                {o.customer?.address && (
+                                  <p className="text-xs text-gray-500 mt-0.5 leading-snug break-words">{o.customer.address}</p>
                                 )}
                               </td>
 
                               {/* Sản phẩm */}
-                              <td className="px-3 py-2.5">
+                              <td className="px-3 py-2.5 max-w-0">
                                 {items.length === 0 ? (
                                   <span className="text-xs text-gray-300 italic">—</span>
                                 ) : (
                                   <div className="space-y-0.5">
-                                    {items.slice(0, 2).map((item) => (
-                                      <p key={item.id} className="text-xs text-gray-900 font-semibold leading-snug">
-                                        {item.product?.name ?? '—'}{' '}
-                                        <span className="text-blue-600 font-bold">×{item.quantity}</span>
-                                      </p>
+                                    {items.slice(0, 3).map((item) => (
+                                      <div key={item.id} className="flex items-baseline gap-1 min-w-0">
+                                        <p className="text-xs text-gray-900 font-semibold leading-snug break-words">
+                                          {item.product?.name ?? '—'}
+                                        </p>
+                                        <span className="text-blue-600 font-bold text-xs whitespace-nowrap flex-shrink-0">×{item.quantity}</span>
+                                      </div>
                                     ))}
-                                    {items.length > 2 && (
-                                      <p className="text-[11px] text-gray-400 italic">+{items.length - 2} khác</p>
+                                    {items.length > 3 && (
+                                      <p className="text-[11px] text-gray-400 italic">+{items.length - 3} khác</p>
                                     )}
                                   </div>
                                 )}
