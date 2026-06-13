@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard, Package, ShoppingCart, Users, Clock,
+  LayoutDashboard, Package, ShoppingCart, Users,
   LogOut, Tag, ArrowUpDown, UserCircle, Menu, X, Truck, MapPin, PhoneCall, ScanSearch, KeyRound,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
@@ -27,7 +27,6 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/inventory',       icon: <ArrowUpDown size={16} />, label: 'Nhập/Xuất Kho',  roles: ['admin', 'accountant', 'warehouse'] },
   { to: '/barcode-tracker', icon: <ScanSearch size={16} />, label: 'Tra Cứu Mã Vạch', roles: ['admin', 'accountant', 'warehouse'] },
   { to: '/suppliers',  icon: <MapPin size={16} />,          label: 'Nhà Cung Cấp',  roles: ['admin', 'accountant', 'warehouse'] },
-  { to: '/attendance', icon: <Clock size={16} />,           label: 'Chấm Công' },
   { to: '/employees',  icon: <UserCircle size={16} />,      label: 'Nhân Viên', roles: ['admin'] },
 ]
 

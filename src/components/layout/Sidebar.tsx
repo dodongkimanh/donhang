@@ -5,7 +5,6 @@ import {
   Package,
   ShoppingCart,
   Users,
-  Clock,
   LogOut,
   Tag,
   ArrowUpDown,
@@ -34,7 +33,6 @@ const navItems: NavItem[] = [
   { to: '/customers', icon: <Users size={20} />, label: 'Khách Hàng' },
   { to: '/inventory', icon: <ArrowUpDown size={20} />, label: 'Nhập/Xuất Kho', roles: ['admin', 'accountant', 'warehouse'] },
   { to: '/suppliers', icon: <Truck size={20} />, label: 'Nhà Cung Cấp', roles: ['admin', 'accountant', 'warehouse'] },
-  { to: '/attendance', icon: <Clock size={20} />, label: 'Chấm Công' },
   { to: '/employees', icon: <UserCircle size={20} />, label: 'Nhân Viên', roles: ['admin'] },
 ]
 

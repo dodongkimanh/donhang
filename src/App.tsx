@@ -11,7 +11,6 @@ import { ProductsPage } from '@/pages/ProductsPage'
 import { InventoryPage } from '@/pages/InventoryPage'
 import { OrdersPage } from '@/pages/OrdersPage'
 import { CustomersPage } from '@/pages/CustomersPage'
-import { AttendancePage } from '@/pages/AttendancePage'
 import { EmployeesPage } from '@/pages/EmployeesPage'
 import { SuppliersPage } from '@/pages/SuppliersPage'
 import { RoutePlanningPage } from '@/pages/RoutePlanningPage'
@@ -135,16 +134,6 @@ function AppRoutes() {
           <ProtectedRoute>
             <AppLayout>
               <CustomersPage />
-            </AppLayout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/attendance"
-        element={
-          <ProtectedRoute>
-            <AppLayout>
-              <AttendancePage />
             </AppLayout>
           </ProtectedRoute>
         }
