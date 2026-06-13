@@ -1347,57 +1347,60 @@ function CreateOrderModal({
           {form.items.length > 0 && (
             <div className="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100">
               {form.items.map((item, idx) => (
-                <div key={item.product_id} className="flex items-center gap-3 px-3 py-2.5 bg-white hover:bg-gray-50/60 transition-colors">
-                  {/* Code + Name + Unit */}
-                  <div className="flex-1 min-w-0 flex items-baseline gap-1.5">
-                    <span className="text-xs font-mono font-bold text-orange-500 flex-shrink-0">{item.product_code}</span>
-                    <span className="text-sm font-medium text-gray-900 truncate">{item.product_name}</span>
-                    <span className="text-[11px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded flex-shrink-0">{item.unit}</span>
-                  </div>
-
-                  {/* Qty stepper */}
-                  <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden bg-white flex-shrink-0">
+                <div key={item.product_id} className="px-3 py-2.5 bg-white hover:bg-gray-50/60 transition-colors">
+                  {/* Row 1: Code + Name + Delete button */}
+                  <div className="flex items-start gap-2 mb-1.5">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs font-mono font-bold text-orange-500">{item.product_code}</span>
+                      <span className="text-sm font-medium text-gray-900 ml-1.5 leading-snug">{item.product_name}</span>
+                      <span className="text-[11px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded ml-1 whitespace-nowrap">{item.unit}</span>
+                    </div>
                     <button
                       type="button"
-                      onClick={() => updateItem(idx, 'quantity', Math.max(1, item.quantity - 1))}
-                      className="w-6 h-6 flex items-center justify-center text-gray-500 hover:bg-gray-100 font-bold text-sm leading-none"
-                    >−</button>
-                    <input
-                      type="number"
-                      value={item.quantity}
-                      onChange={(e) => updateItem(idx, 'quantity', parseInt(e.target.value) || 1)}
-                      className="w-9 text-center text-sm border-x border-gray-200 outline-none h-6"
-                      min="1"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => updateItem(idx, 'quantity', item.quantity + 1)}
-                      className="w-6 h-6 flex items-center justify-center text-gray-500 hover:bg-gray-100 font-bold text-sm leading-none"
-                    >+</button>
+                      onClick={() => removeItem(idx)}
+                      className="flex-shrink-0 w-7 h-7 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                    >
+                      <X size={15} />
+                    </button>
                   </div>
 
-                  <span className="text-gray-300 flex-shrink-0 text-xs">×</span>
+                  {/* Row 2: Qty stepper + price + subtotal */}
+                  <div className="flex items-center gap-2">
+                    {/* Qty stepper */}
+                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden bg-white flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => updateItem(idx, 'quantity', Math.max(1, item.quantity - 1))}
+                        className="w-7 h-7 flex items-center justify-center text-gray-500 hover:bg-gray-100 font-bold text-sm leading-none"
+                      >−</button>
+                      <input
+                        type="number"
+                        value={item.quantity}
+                        onChange={(e) => updateItem(idx, 'quantity', parseInt(e.target.value) || 1)}
+                        className="w-10 text-center text-sm border-x border-gray-200 outline-none h-7"
+                        min="1"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => updateItem(idx, 'quantity', item.quantity + 1)}
+                        className="w-7 h-7 flex items-center justify-center text-gray-500 hover:bg-gray-100 font-bold text-sm leading-none"
+                      >+</button>
+                    </div>
 
-                  {/* Unit price — read only */}
-                  <span className="text-sm text-gray-600 tabular-nums flex-shrink-0 w-28 text-right">
-                    {formatCurrency(item.unit_price)}
-                  </span>
+                    <span className="text-gray-300 text-xs flex-shrink-0">×</span>
 
-                  <span className="text-gray-300 flex-shrink-0 text-xs">=</span>
+                    {/* Unit price */}
+                    <span className="text-sm text-gray-600 tabular-nums flex-shrink-0">
+                      {formatCurrency(item.unit_price)}
+                    </span>
 
-                  {/* Subtotal */}
-                  <span className="font-bold text-sm text-gray-900 tabular-nums flex-shrink-0 w-28 text-right">
-                    {formatCurrency(item.subtotal)}
-                  </span>
+                    <span className="text-gray-300 text-xs flex-shrink-0">=</span>
 
-                  {/* Delete */}
-                  <button
-                    type="button"
-                    onClick={() => removeItem(idx)}
-                    className="p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded flex-shrink-0"
-                  >
-                    <X size={13} />
-                  </button>
+                    {/* Subtotal */}
+                    <span className="font-bold text-sm text-blue-600 tabular-nums ml-auto flex-shrink-0">
+                      {formatCurrency(item.subtotal)}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
