@@ -2063,6 +2063,7 @@ interface ScanItem {
   productCostPrice: number
   barcodes: { psId: string; barcode: string; supplierId: string; supplierName: string; stock: number; costPrice: number }[]
   confirmedPsId: string | null
+  scannedCount: number   // số lần đã quét (phải = qty mới xong)
   stockError: string
 }
 
@@ -2110,6 +2111,7 @@ function ExportOrderModal({ order, onClose, onDone }: { order: Order; onClose: (
             costPrice: p.cost_price,
           })),
         confirmedPsId: null,
+        scannedCount: 0,
         stockError: '',
       })))
       setLoading(false)
@@ -2128,18 +2130,36 @@ function ExportOrderModal({ order, onClose, onDone }: { order: Order; onClose: (
 
     let matched = false
     setItems((prev) => {
-      const next = prev.map((item) => {
-        if (item.confirmedPsId) return item          // already done
+      const next = [...prev]
+      for (let i = 0; i < next.length; i++) {
+        const item = next[i]
+        if (item.scannedCount >= item.qty) continue  // đã đủ số lượng, bỏ qua
         const ps = item.barcodes.find((b) => b.barcode === trimmed)
-        if (!ps) return item
+        if (!ps) continue
+
         matched = true
-        if (ps.stock < item.qty) {
-          setScanMsg({ ok: false, text: `${item.productName}: tồn kho không đủ (còn ${ps.stock}, cần ${item.qty})` })
-          return { ...item, stockError: `Không đủ hàng: còn ${ps.stock} ${item.unit}` }
+
+        if (item.confirmedPsId === null) {
+          // Lần quét đầu tiên: kiểm tra tồn kho
+          if (ps.stock < item.qty) {
+            setScanMsg({ ok: false, text: `${item.productName}: tồn kho không đủ (còn ${ps.stock}, cần ${item.qty})` })
+            next[i] = { ...item, stockError: `Không đủ hàng: còn ${ps.stock} ${item.unit}` }
+          } else {
+            next[i] = { ...item, confirmedPsId: ps.psId, scannedCount: 1, stockError: '' }
+            setScanMsg({ ok: true, text: `✓ ${item.productName} — ${ps.supplierName} (1/${item.qty})` })
+          }
+        } else {
+          // Lần quét tiếp theo: tăng đếm
+          const newCount = item.scannedCount + 1
+          next[i] = { ...item, scannedCount: newCount, stockError: '' }
+          const done = newCount >= item.qty
+          setScanMsg({ ok: true, text: done
+            ? `✓ ${item.productName} — Hoàn tất! (${newCount}/${item.qty})`
+            : `✓ ${item.productName} (${newCount}/${item.qty})`
+          })
         }
-        setScanMsg({ ok: true, text: `✓ ${item.productName} — ${ps.supplierName}` })
-        return { ...item, confirmedPsId: ps.psId, stockError: '' }
-      })
+        break
+      }
       return next
     })
 
@@ -2236,10 +2256,10 @@ function ExportOrderModal({ order, onClose, onDone }: { order: Order; onClose: (
   })
 
   const allScanned = items.length > 0 &&
-    items.every((item) => item.confirmedPsId !== null || item.barcodes.length === 0)
+    items.every((item) => item.scannedCount >= item.qty || item.barcodes.length === 0)
 
-  const confirmedCount = items.filter((i) => i.confirmedPsId).length
-  const totalRequired = items.filter((i) => i.barcodes.length > 0).length
+  const totalScannedQty = items.filter(i => i.barcodes.length > 0).reduce((s, i) => s + Math.min(i.scannedCount, i.qty), 0)
+  const totalRequiredQty = items.filter(i => i.barcodes.length > 0).reduce((s, i) => s + i.qty, 0)
 
   return (
     <Modal isOpen onClose={onClose} title="Xác Nhận Xuất Kho" size="lg">
@@ -2269,9 +2289,9 @@ function ExportOrderModal({ order, onClose, onDone }: { order: Order; onClose: (
                   className="w-full pl-10 pr-16 py-3 border-2 border-blue-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none text-sm font-mono bg-blue-50/40"
                   autoFocus
                 />
-                {totalRequired > 0 && (
-                  <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium ${confirmedCount === totalRequired ? 'text-green-600' : 'text-gray-400'}`}>
-                    {confirmedCount}/{totalRequired} sp
+                {totalRequiredQty > 0 && (
+                  <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium ${totalScannedQty === totalRequiredQty ? 'text-green-600' : 'text-gray-400'}`}>
+                    {totalScannedQty}/{totalRequiredQty} món
                   </span>
                 )}
               </div>
@@ -2310,14 +2330,16 @@ function ExportOrderModal({ order, onClose, onDone }: { order: Order; onClose: (
         ) : (
           <div className="space-y-2">
             {items.map((item) => {
-              const confirmed = !!item.confirmedPsId
+              const fullyScanned = item.scannedCount >= item.qty
+              const partiallyScanned = item.scannedCount > 0 && !fullyScanned
               const noBarcodes = item.barcodes.length === 0
               const confirmedPs = item.barcodes.find((b) => b.psId === item.confirmedPsId)
               return (
                 <div
                   key={item.orderItemId}
                   className={`rounded-xl border-2 p-3.5 transition-all ${
-                    confirmed ? 'border-green-300 bg-green-50'
+                    fullyScanned ? 'border-green-300 bg-green-50'
+                    : partiallyScanned ? 'border-orange-300 bg-orange-50'
                     : item.stockError ? 'border-red-200 bg-red-50'
                     : noBarcodes ? 'border-amber-200 bg-amber-50'
                     : 'border-gray-200 bg-white'
@@ -2327,16 +2349,16 @@ function ExportOrderModal({ order, onClose, onDone }: { order: Order; onClose: (
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-gray-900 text-sm">{item.productName}</p>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        Số lượng: <strong>{item.qty} {item.unit}</strong>
-                        {confirmed && confirmedPs && (
-                          <span className="ml-2 text-green-700">· NCC: {confirmedPs.supplierName} · Tồn: {confirmedPs.stock}</span>
+                        Cần quét: <strong>{item.qty} {item.unit}</strong>
+                        {item.confirmedPsId && confirmedPs && (
+                          <span className="ml-2 text-blue-700">· NCC: {confirmedPs.supplierName}</span>
                         )}
                         {noBarcodes && <span className="ml-2 text-amber-600">· Chưa có mã vạch</span>}
                         {item.stockError && <span className="ml-2 text-red-600">· {item.stockError}</span>}
                       </p>
 
                       {/* Danh sách NCC cần quét — ẩn mã vạch để buộc nhân viên dùng máy quét */}
-                      {!confirmed && !noBarcodes && (
+                      {!fullyScanned && !noBarcodes && (
                         <div className="flex flex-wrap gap-1 mt-1.5">
                           {item.barcodes.map((b) => (
                             <span
@@ -2355,9 +2377,13 @@ function ExportOrderModal({ order, onClose, onDone }: { order: Order; onClose: (
                     </div>
 
                     <div className="flex-shrink-0">
-                      {confirmed ? (
+                      {fullyScanned ? (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-600 text-white text-xs font-bold rounded-lg">
-                          <CheckCircle size={12} /> Đã quét
+                          <CheckCircle size={12} /> {item.qty}/{item.qty}
+                        </span>
+                      ) : partiallyScanned ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-500 text-white text-xs font-bold rounded-lg">
+                          {item.scannedCount}/{item.qty}
                         </span>
                       ) : noBarcodes ? (
                         <span className="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded-lg font-medium">Bỏ qua</span>
@@ -2382,7 +2408,7 @@ function ExportOrderModal({ order, onClose, onDone }: { order: Order; onClose: (
             className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white rounded-lg text-sm font-medium"
           >
             <CheckCircle size={16} />
-            {confirmMutation.isPending ? 'Đang xử lý...' : allScanned ? 'Xác Nhận Xuất Kho' : `Chờ quét (${confirmedCount}/${totalRequired})`}
+            {confirmMutation.isPending ? 'Đang xử lý...' : allScanned ? 'Xác Nhận Xuất Kho' : `Chờ quét (${totalScannedQty}/${totalRequiredQty} món)`}
           </button>
         </div>
       </div>
