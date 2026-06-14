@@ -115,12 +115,12 @@ const STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
   { value: 'cancelled',         label: 'Khách Hủy' },
 ]
 
-// Luồng chuyển trạng thái hợp lệ — 'packing' chỉ được set qua xuất kho mã vạch
+// Luồng chuyển trạng thái hợp lệ — 'packing' chỉ được set qua nút Xuất Kho Đóng Gói
 const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   draft:             ['placed', 'cancelled'],
   placed:            ['confirmed', 'cancelled'],
-  confirmed:         ['packing', 'placed', 'cancelled'],
-  packing:           ['shipping', 'returned', 'partial_return'],
+  confirmed:         ['placed', 'cancelled'],
+  packing:           ['shipping', 'returned', 'partial_return', 'cancelled'],
   shipping:          ['completed', 'returned', 'returned_received', 'partial_return'],
   completed:         ['returned', 'partial_return'],
   returned:          ['returned_received'],
@@ -128,6 +128,12 @@ const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   partial_return:    ['completed', 'returned'],
   cancelled:         [],
 }
+
+// Tất cả trạng thái admin có thể chọn (bỏ draft vì không cần đặt lại về nháp)
+const ALL_ADMIN_STATUSES: OrderStatus[] = [
+  'placed', 'confirmed', 'packing', 'shipping', 'completed',
+  'returned', 'returned_received', 'partial_return', 'cancelled',
+]
 
 // Chuẩn hóa SĐT: bỏ đầu 0 hoặc 84, lấy 9 số cuối
 function normalizePhone(phone: string): string {
@@ -139,17 +145,17 @@ function normalizePhone(phone: string): string {
 
 // ── Inline Status Select ──────────────────────────────────────────────────────
 
-function StatusSelect({ order, onUpdate }: { order: Order; onUpdate: (id: string, s: OrderStatus) => void }) {
+function StatusSelect({ order, onUpdate, isAdmin = false }: { order: Order; onUpdate: (id: string, s: OrderStatus) => void; isAdmin?: boolean }) {
   const cfg = ORDER_STATUS_CONFIG[order.status] ?? ORDER_STATUS_CONFIG['placed']
   const allowed = ALLOWED_TRANSITIONS[order.status] ?? []
 
-  // Chỉ hiển thị trạng thái hiện tại + các trạng thái được phép chuyển sang
-  const visibleOptions = STATUS_OPTIONS.filter(
-    (o) => o.value === order.status || allowed.includes(o.value)
-  )
+  // Admin: thấy tất cả trạng thái; non-admin: chỉ trạng thái được phép
+  const visibleOptions = isAdmin
+    ? STATUS_OPTIONS.filter((o) => o.value === order.status || ALL_ADMIN_STATUSES.includes(o.value))
+    : STATUS_OPTIONS.filter((o) => o.value === order.status || allowed.includes(o.value))
 
-  // Nếu không có trạng thái nào để chuyển (terminal state) → chỉ hiển thị badge
-  if (allowed.length === 0) {
+  // Non-admin ở trạng thái terminal → chỉ hiển thị badge
+  if (!isAdmin && allowed.length === 0) {
     return <StatusBadge status={order.status} />
   }
 
@@ -2848,15 +2854,20 @@ export function OrdersPage() {
                           </button>
                         </div>
                         <p className="text-[11px] text-gray-400 mt-1">lúc {formatDate(order.created_at)}</p>
-                        {canExport && (
+                        {canEdit && order.status === 'confirmed' && (
                           <button onClick={() => setExportingOrder(order)}
-                            className="mt-2 flex items-center gap-1 text-[11px] font-bold italic text-green-600 hover:text-green-700">
-                            <Truck size={10} /> Xuất kho
+                            className="mt-2 flex items-center gap-1 text-[11px] font-bold italic text-amber-600 hover:text-amber-700">
+                            <Truck size={10} /> Xuất Kho Đóng Gói
                           </button>
                         )}
                         {canEdit && order.status === 'packing' && (
+                          <span className="mt-2 flex items-center gap-1 text-[11px] font-bold text-green-600">
+                            <CheckCircle size={10} /> Đã Xuất Kho
+                          </span>
+                        )}
+                        {canEdit && order.status === 'packing' && (
                           <button onClick={() => setRevertingOrder(order)}
-                            className="mt-2 flex items-center gap-1 text-[11px] font-bold italic text-red-500 hover:text-red-700">
+                            className="mt-1 flex items-center gap-1 text-[11px] font-bold italic text-red-500 hover:text-red-700">
                             <X size={10} /> Hủy xuất kho
                           </button>
                         )}
@@ -3064,7 +3075,7 @@ export function OrdersPage() {
                       {/* Col 5: Trạng thái */}
                       <td className="px-4 py-3 border-r border-dashed border-gray-200">
                         {canEdit || (isEmployee && order.status === 'draft') ? (
-                          <StatusSelect order={order} onUpdate={(id, s) => updateStatusMutation.mutate({ id, status: s })} />
+                          <StatusSelect order={order} isAdmin={isAdmin} onUpdate={(id, s) => updateStatusMutation.mutate({ id, status: s })} />
                         ) : (
                           <StatusBadge status={order.status} block />
                         )}
