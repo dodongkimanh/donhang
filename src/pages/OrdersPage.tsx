@@ -2827,7 +2827,6 @@ export function OrdersPage() {
                   <tbody>
                     {group.orders.map((order) => {
                   const items: OrderItem[] = order.items ?? []
-                  const canExport = canEdit && order.status === 'confirmed'
                   // Use FIFO cost_price stored at packing time when available, fall back to current product cost
                   const hasFifoCost = items.length > 0 && items.every((i) => i.cost_price != null)
                   const totalCost = canEdit ? items.reduce((s, item) => {
