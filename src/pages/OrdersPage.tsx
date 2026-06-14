@@ -2205,6 +2205,8 @@ function ExportOrderModal({ order, onClose, onDone }: { order: Order; onClose: (
   const confirmMutation = useMutation({
     mutationFn: async () => {
       if (!profile) throw new Error('Not authenticated')
+      // Dùng 1 batch_id chung cho toàn bộ giao dịch xuất kho của đơn hàng này
+      const exportBatchId = crypto.randomUUID()
       for (const item of items) {
         if (!item.confirmedPsId) {
           // Sản phẩm không có NCC — ghi xuất theo giá vốn sản phẩm, không trừ tồn NCC
@@ -2218,6 +2220,7 @@ function ExportOrderModal({ order, onClose, onDone }: { order: Order; onClose: (
               unit_price: fifoCost,
               note: `Xuất theo đơn ${order.order_number}`,
               created_by: profile.id,
+              batch_id: exportBatchId,
             })
             await supabase.from('order_items').update({ cost_price: fifoCost }).eq('id', item.orderItemId)
           }
@@ -2239,6 +2242,7 @@ function ExportOrderModal({ order, onClose, onDone }: { order: Order; onClose: (
           unit_price: fifoCost,
           note: `Xuất theo đơn ${order.order_number}`,
           created_by: profile.id,
+          batch_id: exportBatchId,
         })
       }
       await supabase.from('orders').update({ status: 'packing' }).eq('id', order.id)
