@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Package, ShoppingCart, Users, TrendingUp, ChevronLeft, ChevronRight, ChevronDown, Filter } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip,
-  LabelList, Legend, ResponsiveContainer,
+  Legend, ResponsiveContainer,
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -296,7 +296,6 @@ export function DashboardPage() {
     { title: 'Tổng Khách Hàng',      value: customerCount, icon: <Users size={24} />,        color: 'bg-purple-500' },
   ]
 
-  const empChartHeight = Math.max(100, salesByEmployee.length * 28 + 30)
 
   // ── Legend style shared ──────────────────────────────────────────────────
   const legendStyle = { fontSize: 11, paddingTop: 8 }
@@ -456,52 +455,39 @@ export function DashboardPage() {
             })}
           </div>
 
-          <div style={{ height: empChartHeight }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                layout="vertical"
-                data={empChartData}
-                margin={{ top: 4, right: 52, bottom: 4, left: 0 }}
-              >
-                <XAxis
-                  type="number"
-                  tickFormatter={fmtAxis}
-                  tick={{ fontSize: 10, fill: '#9ca3af' }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  type="category"
-                  dataKey="name"
-                  width={140}
-                  tick={(props: any) => (// eslint-disable-line @typescript-eslint/no-explicit-any
-                    <text x={4} y={Number(props.y)} dy={4} textAnchor="start" fontSize={11} fill="#374151">
-                      {props.payload.value}
-                    </text>
-                  )}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <Tooltip content={<ChartTooltip />} cursor={false} wrapperStyle={{ outline: 'none', border: 'none', boxShadow: 'none' }} />
-                {visibleStatuses.map((status) => (
-                  <Bar
-                    key={status}
-                    dataKey={status}
-                    name={STATUS_LABELS[status] ?? status}
-                    stackId="a"
-                    fill={STATUS_COLORS[status] ?? '#94a3b8'}
-                    barSize={12}
-                  >
-                    <LabelList
-                      dataKey={`_lbl_${status}`}
-                      position="right"
-                      formatter={(v: unknown) => (Number(v) > 0 ? fmtAxis(Number(v)) : '')}
-                      style={{ fontSize: 11, fontWeight: 600, fill: '#374151' }}
-                    />
-                  </Bar>
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="space-y-2">
+            {empChartData.map((emp) => {
+              const total = emp._total as number
+              const maxVal = Math.max(...empChartData.map(e => e._total as number), 1)
+              const pct = (total / maxVal) * 100
+              return (
+                <div key={emp.name as string} className="flex items-center gap-2">
+                  <div className="w-[72px] sm:w-[100px] flex-shrink-0 text-xs text-gray-700 leading-tight text-right pr-1">
+                    {emp.name as string}
+                  </div>
+                  <div className="flex-1 flex items-center gap-2 min-w-0">
+                    <div className="flex-1 h-5 bg-gray-100 rounded-sm overflow-hidden">
+                      <div className="h-full flex" style={{ width: `${Math.max(pct, 2)}%` }}>
+                        {visibleStatuses.map((st) => {
+                          const val = (emp[st] as number) || 0
+                          if (val <= 0 || total <= 0) return null
+                          return (
+                            <div
+                              key={st}
+                              style={{ width: `${(val / total) * 100}%`, backgroundColor: STATUS_COLORS[st] ?? '#94a3b8' }}
+                              className="h-full"
+                            />
+                          )
+                        })}
+                      </div>
+                    </div>
+                    <span className="text-xs font-semibold text-gray-600 w-[60px] sm:w-[80px] flex-shrink-0">
+                      {formatCurrency(total).replace(' đ', '')}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
