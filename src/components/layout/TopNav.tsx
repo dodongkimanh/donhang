@@ -80,7 +80,7 @@ export function TopNav() {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-20 bg-blue-600 border-b border-blue-700 h-14 flex items-center px-3 gap-2">
+      <header className="fixed top-0 left-0 right-0 z-20 bg-blue-600 border-b border-blue-700 flex items-center px-3 gap-2 pt-[env(safe-area-inset-top)] h-[calc(3.5rem+env(safe-area-inset-top))]">
 
         {/* Mobile: hamburger bên trái */}
         <button
@@ -157,7 +157,7 @@ export function TopNav() {
             className="fixed inset-0 z-10 bg-black/40 lg:hidden"
             onClick={() => setMobileOpen(false)}
           />
-          <div className="fixed top-14 left-0 right-0 z-20 bg-blue-700 border-b border-blue-800 p-3 grid grid-cols-2 gap-1 lg:hidden shadow-xl">
+          <div className="fixed top-[calc(3.5rem+env(safe-area-inset-top))] left-0 right-0 z-20 bg-blue-700 border-b border-blue-800 p-3 grid grid-cols-2 gap-1 lg:hidden shadow-xl">
             {visibleItems.map((item) => (
               <NavLink
                 key={item.to}

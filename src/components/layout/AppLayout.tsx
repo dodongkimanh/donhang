@@ -9,8 +9,7 @@ export function AppLayout({ children }: Props) {
   return (
     <div className="min-h-screen bg-gray-50">
       <TopNav />
-      {/* pt-14 = height of the fixed top nav */}
-      <main className="pt-14 overflow-x-hidden">
+      <main className="pt-[calc(3.5rem+env(safe-area-inset-top))] overflow-x-hidden">
         <div className="p-3 sm:p-6">{children}</div>
       </main>
     </div>
