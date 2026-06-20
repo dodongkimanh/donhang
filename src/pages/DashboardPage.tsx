@@ -60,7 +60,7 @@ function ChartTooltip({ active, payload, label, labelFormatter }: any) {
   if (!nonZero.length) return null
   const displayLabel = typeof labelFormatter === 'function' ? labelFormatter(label) : label
   return (
-    <div className="bg-white rounded-lg shadow-md p-3 text-xs min-w-[180px]">
+    <div className="bg-white/95 rounded-lg p-3 text-xs min-w-[160px]">
       <p className="font-semibold text-gray-800 mb-2">{displayLabel}</p>
       {nonZero.map((p: any) => (
         <div key={p.dataKey} className="flex items-center justify-between gap-3 py-0.5">
@@ -295,7 +295,7 @@ export function DashboardPage() {
     { title: 'Tổng Khách Hàng',      value: customerCount, icon: <Users size={24} />,        color: 'bg-purple-500' },
   ]
 
-  const empChartHeight = Math.max(120, salesByEmployee.length * 36 + 40)
+  const empChartHeight = Math.max(100, salesByEmployee.length * 28 + 30)
 
   // ── Legend style shared ──────────────────────────────────────────────────
   const legendStyle = { fontSize: 11, paddingTop: 8 }
@@ -434,7 +434,7 @@ export function DashboardPage() {
                   axisLine={false}
                   tickLine={false}
                 />
-                <Tooltip content={<ChartTooltip />} cursor={{ fill: '#f9fafb' }} />
+                <Tooltip content={<ChartTooltip />} cursor={false} />
                 {visibleStatuses.map((status) => (
                   <Bar
                     key={status}
@@ -521,7 +521,7 @@ export function DashboardPage() {
                 />
                 <Tooltip
                   content={<ChartTooltip />}
-                  cursor={{ fill: '#f9fafb' }}
+                  cursor={false}
                   labelFormatter={(v) => `Ngày ${v}`}
                 />
                 <Legend iconType="square" iconSize={10} wrapperStyle={legendStyle} />
@@ -548,7 +548,7 @@ export function DashboardPage() {
                   tickLine={false}
                   width={28}
                 />
-                <Tooltip content={<ChartTooltip />} cursor={{ fill: '#f9fafb' }} />
+                <Tooltip content={<ChartTooltip />} cursor={false} />
                 <Legend iconType="square" iconSize={10} wrapperStyle={legendStyle} />
                 <Bar dataKey="Năm trước" fill="#c7d2fe" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="Năm nay" fill="#6366f1" radius={[4, 4, 0, 0]} />
