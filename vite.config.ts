@@ -10,8 +10,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['ka.svg'],
       manifest: {
-        name: 'Quản Lý Đơn Hàng - KA CRM',
-        short_name: 'KA CRM',
+        name: 'Quản Lý Đơn Hàng',
+        short_name: 'Quản Lý ĐH',
         description: 'Hệ thống quản lý đơn hàng CRM',
         theme_color: '#2563EB',
         background_color: '#ffffff',
