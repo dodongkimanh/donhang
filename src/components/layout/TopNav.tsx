@@ -93,7 +93,7 @@ export function TopNav() {
         {/* Mobile: Logo Kim Ánh giữa */}
         <div className="lg:hidden flex-1 flex items-center justify-start">
           <span className="text-white font-bold text-lg tracking-wide select-none">
-            Đồ Đồng Kim Ánh
+            Quản Lý Đơn Hàng
           </span>
         </div>
 
