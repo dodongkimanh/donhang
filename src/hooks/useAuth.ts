@@ -20,9 +20,18 @@ export function useAuthInit() {
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }: { data: { session: Session | null } }) => {
-      setUser((session?.user ?? null) as User | null)
       if (session?.user) {
-        setProfile(await fetchProfile(session.user.id))
+        const p = await fetchProfile(session.user.id)
+        if (p?.is_locked) {
+          await supabase.auth.signOut()
+          reset()
+          setLoading(false)
+          return
+        }
+        setUser(session.user as User)
+        setProfile(p)
+      } else {
+        setUser(null)
       }
       setLoading(false)
     })
@@ -48,8 +57,18 @@ export function useAuth() {
   const { user, profile, loading } = useAuthStore()
 
   async function signIn(email: string, password: string) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    return { error }
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) return { error }
+
+    if (data.user) {
+      const p = await fetchProfile(data.user.id)
+      if (p?.is_locked) {
+        await supabase.auth.signOut()
+        useAuthStore.getState().reset()
+        return { error: { message: 'Tài khoản đã bị khóa. Liên hệ quản trị viên.' } }
+      }
+    }
+    return { error: null }
   }
 
   async function signOut() {

@@ -9,6 +9,7 @@ export interface Profile {
   email?: string
   cmnd?: string
   address?: string
+  is_locked?: boolean
   created_at: string
   updated_at: string
 }

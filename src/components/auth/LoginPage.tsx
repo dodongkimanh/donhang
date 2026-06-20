@@ -14,7 +14,7 @@ export function LoginPage() {
     setLoading(true)
     const { error } = await signIn(email, password)
     if (error) {
-      toast.error('Email hoặc mật khẩu không đúng')
+      toast.error(error.message === 'Tài khoản đã bị khóa. Liên hệ quản trị viên.' ? error.message : 'Email hoặc mật khẩu không đúng')
     }
     setLoading(false)
   }

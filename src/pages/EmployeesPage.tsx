@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, UserCircle, KeyRound } from 'lucide-react'
+import { Plus, Pencil, Trash2, UserCircle, KeyRound, Lock, LockOpen } from 'lucide-react'
 import { supabase, adminSupabase } from '@/lib/supabase'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -154,6 +154,18 @@ export function EmployeesPage() {
     onError: (e: Error) => toast.error(`Lỗi: ${e.message}`),
   })
 
+  const lockMutation = useMutation({
+    mutationFn: async ({ emp, lock }: { emp: Profile; lock: boolean }) => {
+      const { error } = await supabase.from('profiles').update({ is_locked: lock }).eq('id', emp.id)
+      if (error) throw error
+    },
+    onSuccess: (_d, { lock }) => {
+      queryClient.invalidateQueries({ queryKey: ['employees'] })
+      toast.success(lock ? 'Đã khóa tài khoản' : 'Đã mở khóa tài khoản')
+    },
+    onError: () => toast.error('Không thể thay đổi trạng thái khóa'),
+  })
+
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
   function openAdd() {
@@ -207,9 +219,12 @@ export function EmployeesPage() {
 
   const isPending = createMutation.isPending || updateMutation.isPending
 
+  const activeEmployees = employees.filter((e) => !e.is_locked)
+  const lockedEmployees = employees.filter((e) => e.is_locked)
+
   const grouped = ROLE_GROUPS.map(({ role, label }) => ({
     role, label,
-    members: employees.filter((e) => e.role === role),
+    members: activeEmployees.filter((e) => e.role === role),
   })).filter((g) => g.members.length > 0)
 
   return (
@@ -217,7 +232,7 @@ export function EmployeesPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Nhân Viên</h1>
-          <p className="text-gray-500 mt-1">{employees.length} tài khoản</p>
+          <p className="text-gray-500 mt-1">{activeEmployees.length} tài khoản{lockedEmployees.length > 0 ? ` · ${lockedEmployees.length} đã khóa` : ''}</p>
         </div>
         <button
           onClick={openAdd}
@@ -293,6 +308,13 @@ export function EmployeesPage() {
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-1">
                             <button
+                              onClick={() => lockMutation.mutate({ emp, lock: !emp.is_locked })}
+                              className={`p-1.5 rounded-lg ${emp.is_locked ? 'text-red-500 hover:text-green-600 hover:bg-green-50' : 'text-gray-400 hover:text-red-600 hover:bg-red-50'}`}
+                              title={emp.is_locked ? 'Mở khóa tài khoản' : 'Khóa tài khoản'}
+                            >
+                              {emp.is_locked ? <Lock size={15} /> : <LockOpen size={15} />}
+                            </button>
+                            <button
                               onClick={() => { setPwEmployee(emp); setNewPw(''); setConfirmPw('') }}
                               className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg"
                               title="Đặt lại mật khẩu"
@@ -319,6 +341,49 @@ export function EmployeesPage() {
                     ))}
                   </>
                 ))}
+
+                {lockedEmployees.length > 0 && (
+                  <>
+                    <tr className="bg-gray-100">
+                      <td colSpan={7} className="px-4 py-2 border-y border-gray-200">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">
+                            <Lock size={10} className="inline mr-1 -mt-0.5" />Đã Nghỉ
+                          </span>
+                          <span className="text-xs text-gray-400">{lockedEmployees.length} người</span>
+                        </div>
+                      </td>
+                    </tr>
+                    {lockedEmployees.map((emp) => (
+                      <tr key={emp.id} className="hover:bg-gray-50 border-b border-gray-100 last:border-0 opacity-50">
+                        <td className="px-4 py-3 font-medium text-gray-500 text-sm line-through">{emp.full_name}</td>
+                        <td className="px-4 py-3 text-sm text-gray-400 font-mono">{emp.email ?? '-'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-400">{emp.phone ?? '-'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-400 hidden md:table-cell font-mono">{emp.cmnd ?? '-'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-400 hidden lg:table-cell truncate" title={emp.address ?? ''}>{emp.address ?? '-'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-400 hidden sm:table-cell">{formatDate(emp.created_at)}</td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => lockMutation.mutate({ emp, lock: false })}
+                              className="p-1.5 text-red-500 hover:text-green-600 hover:bg-green-50 rounded-lg"
+                              title="Mở khóa tài khoản"
+                            >
+                              <Lock size={15} />
+                            </button>
+                            <button
+                              onClick={() => setDeleteId(emp.id)}
+                              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                              title="Xóa"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </>
+                )}
               </tbody>
             </table>
           </div>

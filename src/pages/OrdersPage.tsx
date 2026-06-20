@@ -1656,7 +1656,7 @@ function OrderDetailModal({ order, onClose }: { order: Order; onClose: () => voi
                         )}
                       </td>
                       <td className="px-3 py-2.5 text-center">
-                        <span className={`font-bold tabular-nums ${item.product?.quantity !== undefined && item.quantity > item.product.quantity ? 'text-red-600' : 'text-blue-600'}`}>
+                        <span className={`font-bold tabular-nums ${!['packing','shipping','completed','returned','returned_received','partial_return'].includes(order.status) && item.product?.quantity !== undefined && item.quantity > item.product.quantity ? 'text-red-600' : 'text-blue-600'}`}>
                           {item.quantity}
                         </span>
                       </td>
@@ -2940,7 +2940,7 @@ export function OrdersPage() {
                             </button>
                           )
                         })()}
-                        {!isEmployee && items.some((item) => {
+                        {!isEmployee && !['packing','shipping','completed','returned','returned_received','partial_return'].includes(order.status) && items.some((item) => {
                           const pQty = item.product?.quantity
                           return pQty !== undefined && item.quantity > pQty
                         }) && (
@@ -3018,7 +3018,7 @@ export function OrdersPage() {
                                     <span className="font-mono text-[10px] font-bold text-green-600">{item.product?.product_code ?? '—'}</span>
                                   </td>
                                   <td className="py-1 text-gray-900 font-semibold leading-snug">{item.product?.name ?? '—'}</td>
-                                  <td className={`py-1 text-right font-bold tabular-nums whitespace-nowrap pl-2 w-10 align-top ${item.product?.quantity !== undefined && item.quantity > item.product.quantity ? 'text-red-600' : 'text-blue-600'}`}>SL:{item.quantity}</td>
+                                  <td className={`py-1 text-right font-bold tabular-nums whitespace-nowrap pl-2 w-10 align-top ${!['packing','shipping','completed','returned','returned_received','partial_return'].includes(order.status) && item.product?.quantity !== undefined && item.quantity > item.product.quantity ? 'text-red-600' : 'text-blue-600'}`}>SL:{item.quantity}</td>
                                   <td className="py-1 text-right text-gray-600 font-medium tabular-nums whitespace-nowrap pl-2 w-28 align-top">{formatCurrency(item.unit_price)}</td>
                                 </tr>
                               ))}
