@@ -370,18 +370,18 @@ export function DashboardPage() {
           <div className="sm:hidden mb-4 relative">
             <button
               onClick={() => setStatusDropdownOpen(v => !v)}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 w-full justify-between"
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 text-sm text-gray-700 w-full justify-between"
             >
               <span className="flex items-center gap-2">
                 <Filter size={14} className="text-gray-400" />
-                Trạng thái ({ALL_STATUSES.length - disabledStatuses.size}/{ALL_STATUSES.length})
+                {disabledStatuses.size === 0 ? 'Tất cả trạng thái' : `${ALL_STATUSES.length - disabledStatuses.size} trạng thái`}
               </span>
               <ChevronDown size={16} className={`text-gray-400 transition-transform ${statusDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
             {statusDropdownOpen && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setStatusDropdownOpen(false)} />
-                <div className="absolute top-full left-0 right-0 z-20 mt-1 bg-white rounded-xl border border-gray-200 shadow-lg p-2 max-h-[300px] overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 z-20 mt-1 bg-white rounded-xl shadow-lg p-2 max-h-[300px] overflow-y-auto">
                   <button
                     onClick={() => setDisabledStatuses(prev => prev.size === 0 ? new Set(ALL_STATUSES) : new Set())}
                     className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50"
@@ -461,21 +461,21 @@ export function DashboardPage() {
               <BarChart
                 layout="vertical"
                 data={empChartData}
-                margin={{ top: 4, right: 72, bottom: 4, left: 4 }}
+                margin={{ top: 4, right: 52, bottom: 4, left: 0 }}
               >
                 <XAxis
                   type="number"
                   tickFormatter={fmtAxis}
-                  tick={{ fontSize: 11, fill: '#6b7280' }}
+                  tick={{ fontSize: 10, fill: '#9ca3af' }}
                   axisLine={false}
                   tickLine={false}
                 />
                 <YAxis
                   type="category"
                   dataKey="name"
-                  width={120}
+                  width={140}
                   tick={(props: any) => (// eslint-disable-line @typescript-eslint/no-explicit-any
-                    <text x={Number(props.x) - 118} y={Number(props.y)} dy={4} textAnchor="start" fontSize={12} fill="#374151">
+                    <text x={4} y={Number(props.y)} dy={4} textAnchor="start" fontSize={11} fill="#374151">
                       {props.payload.value}
                     </text>
                   )}
