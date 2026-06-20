@@ -54,22 +54,16 @@ function fmtAxis(v: number): string {
 // ── Custom tooltip ────────────────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function ChartTooltip({ active, payload, label }: any) {
+function ChartTooltip({ active, payload, label, labelFormatter }: any) {
   if (!active || !payload?.length) return null
   const nonZero = payload.filter((p: any) => p.value > 0)
   if (!nonZero.length) return null
+  const displayLabel = typeof labelFormatter === 'function' ? labelFormatter(label) : label
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs min-w-[180px]">
-      <p className="font-semibold text-gray-800 mb-2">{label}</p>
+      <p className="font-semibold text-gray-800 mb-2">{displayLabel}</p>
       {nonZero.map((p: any) => (
         <div key={p.dataKey} className="flex items-center justify-between gap-3 py-0.5">
-          <span className="flex items-center gap-1.5 min-w-0">
-            <span
-              className="w-2.5 h-2.5 rounded-sm shrink-0"
-              style={{ background: p.fill ?? p.color }}
-            />
-            <span className="text-gray-600 truncate">{p.name}</span>
-          </span>
           <span className="font-medium text-gray-800 shrink-0">{formatCurrency(p.value)}</span>
         </div>
       ))}
@@ -504,7 +498,7 @@ export function DashboardPage() {
             {view === 'month' ? (
               <BarChart
                 data={monthData}
-                margin={{ top: 4, right: 8, bottom: 4, left: -12 }}
+                margin={{ top: 4, right: 8, bottom: 4, left: 0 }}
                 barCategoryGap="20%"
                 barGap={1}
               >
@@ -521,7 +515,7 @@ export function DashboardPage() {
                   tick={{ fontSize: 9, fill: '#9ca3af' }}
                   axisLine={false}
                   tickLine={false}
-                  width={32}
+                  width={28}
                 />
                 <Tooltip
                   content={<ChartTooltip />}
@@ -535,7 +529,7 @@ export function DashboardPage() {
             ) : (
               <BarChart
                 data={yearData}
-                margin={{ top: 4, right: 8, bottom: 4, left: -12 }}
+                margin={{ top: 4, right: 8, bottom: 4, left: 0 }}
                 barCategoryGap="25%"
               >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
@@ -551,7 +545,7 @@ export function DashboardPage() {
                   tick={{ fontSize: 9, fill: '#9ca3af' }}
                   axisLine={false}
                   tickLine={false}
-                  width={32}
+                  width={28}
                 />
                 <Tooltip content={<ChartTooltip />} cursor={{ fill: '#f9fafb' }} />
                 <Legend iconType="square" iconSize={10} wrapperStyle={legendStyle} />
