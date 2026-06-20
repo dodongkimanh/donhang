@@ -1,7 +1,24 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { BrowserMultiFormatReader, type IScannerControls } from '@zxing/browser'
 import { NotFoundException } from '@zxing/library'
-import { X, Camera, CameraOff, RefreshCw, Scan } from 'lucide-react'
+import { X, Camera, CameraOff, RefreshCw, Scan, Volume2, VolumeX } from 'lucide-react'
+
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.frequency.value = 1800
+    osc.type = 'square'
+    gain.gain.setValueAtTime(0.3, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.15)
+    osc.onended = () => ctx.close()
+  } catch { /* silent fallback */ }
+}
 
 interface Props {
   onDetected: (barcode: string) => void
@@ -17,6 +34,18 @@ export function BarcodeScannerModal({ onDetected, onClose }: Props) {
   const [errorMsg, setErrorMsg] = useState('')
   const [lastBarcode, setLastBarcode] = useState('')
   const cooldownRef = useRef(false)
+  const [soundOn, setSoundOn] = useState(() => localStorage.getItem('scanner-sound') !== 'off')
+  const soundRef = useRef(soundOn)
+  soundRef.current = soundOn
+
+  const toggleSound = useCallback(() => {
+    setSoundOn(prev => {
+      const next = !prev
+      localStorage.setItem('scanner-sound', next ? 'on' : 'off')
+      if (next) playBeep()
+      return next
+    })
+  }, [])
 
   // Detect number of cameras (labels may be empty before permission, so just count)
   useEffect(() => {
@@ -53,6 +82,7 @@ export function BarcodeScannerModal({ onDetected, onClose }: Props) {
             if (cooldownRef.current) return
             cooldownRef.current = true
             const text = result.getText()
+            if (soundRef.current) playBeep()
             setLastBarcode(text)
             setStatus('scanning')
             setTimeout(() => {
@@ -111,12 +141,21 @@ export function BarcodeScannerModal({ onDetected, onClose }: Props) {
             <Scan size={20} className="text-blue-400" />
             <span className="font-semibold">Quét Mã Vạch</span>
           </div>
-          <button
-            onClick={() => { controlsRef.current?.stop(); onClose() }}
-            className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors text-white"
-          >
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleSound}
+              className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors text-white"
+              title={soundOn ? 'Tắt âm thanh' : 'Bật âm thanh'}
+            >
+              {soundOn ? <Volume2 size={18} /> : <VolumeX size={18} />}
+            </button>
+            <button
+              onClick={() => { controlsRef.current?.stop(); onClose() }}
+              className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors text-white"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
       </div>
 
