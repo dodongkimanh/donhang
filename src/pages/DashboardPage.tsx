@@ -201,6 +201,17 @@ export function DashboardPage() {
     })
   }
 
+  // Doanh thu + số đơn theo trạng thái đang bật
+  const { filteredRevenue, filteredOrderCount } = useMemo(() => {
+    const enabledOrders = disabledStatuses.size === 0
+      ? thisMonthOrders
+      : thisMonthOrders.filter(o => !disabledStatuses.has(o.status))
+    return {
+      filteredRevenue: enabledOrders.reduce((s, o) => s + o.final_amount, 0),
+      filteredOrderCount: enabledOrders.length,
+    }
+  }, [thisMonthOrders, disabledStatuses])
+
   // Dữ liệu chart theo trạng thái đang bật, kèm _total và _lbl_<status>
   const { empChartData, visibleStatuses } = useMemo(() => {
     const visible = activeStatuses.filter(s => !disabledStatuses.has(s))
@@ -339,13 +350,13 @@ export function DashboardPage() {
         ))}
       </div>
 
-      {/* Doanh thu tháng này (admin / kế toán) */}
+      {/* Doanh thu tháng – nhảy theo trạng thái được chọn */}
       {isPrivileged && (
         <div className="bg-white rounded-xl shadow-sm px-4 py-3">
           <h2 className="text-xs font-medium text-gray-500 mb-0.5">Doanh Thu {monthLabel}</h2>
-          <p className="text-2xl sm:text-3xl font-bold text-blue-600">{formatCurrency(totalRevenue)}</p>
+          <p className="text-2xl sm:text-3xl font-bold text-blue-600">{formatCurrency(filteredRevenue)}</p>
           <p className="text-xs text-gray-400 mt-0.5">
-            Tổng {totalOrders} đơn trong {monthLabel.toLowerCase()}
+            Tổng {filteredOrderCount} đơn trong {monthLabel.toLowerCase()}
           </p>
         </div>
       )}
@@ -461,7 +472,7 @@ export function DashboardPage() {
               {view === 'month' ? 'Tháng Này vs Tháng Trước' : 'Năm Nay vs Năm Trước'}
             </h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              {view === 'month' ? 'Theo từng ngày trong tháng (30 ngày)' : 'Theo từng tháng trong năm (12 tháng)'}
+              {view === 'month' ? 'So sánh theo từng ngày' : 'So sánh theo từng tháng'}
             </p>
           </div>
           <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm shrink-0">
@@ -473,7 +484,7 @@ export function DashboardPage() {
                   : 'bg-white text-gray-600 hover:bg-gray-50'
               }`}
             >
-              Theo tháng
+              Theo Ngày
             </button>
             <button
               onClick={() => setView('year')}
@@ -483,7 +494,7 @@ export function DashboardPage() {
                   : 'bg-white text-gray-600 hover:bg-gray-50'
               }`}
             >
-              Theo năm
+              Theo Tháng
             </button>
           </div>
         </div>
@@ -493,7 +504,7 @@ export function DashboardPage() {
             {view === 'month' ? (
               <BarChart
                 data={monthData}
-                margin={{ top: 4, right: 16, bottom: 4, left: 4 }}
+                margin={{ top: 4, right: 8, bottom: 4, left: -12 }}
                 barCategoryGap="20%"
                 barGap={1}
               >
@@ -507,10 +518,10 @@ export function DashboardPage() {
                 />
                 <YAxis
                   tickFormatter={fmtAxis}
-                  tick={{ fontSize: 11, fill: '#6b7280' }}
+                  tick={{ fontSize: 9, fill: '#9ca3af' }}
                   axisLine={false}
                   tickLine={false}
-                  width={42}
+                  width={32}
                 />
                 <Tooltip
                   content={<ChartTooltip />}
@@ -524,7 +535,7 @@ export function DashboardPage() {
             ) : (
               <BarChart
                 data={yearData}
-                margin={{ top: 4, right: 16, bottom: 4, left: 4 }}
+                margin={{ top: 4, right: 8, bottom: 4, left: -12 }}
                 barCategoryGap="25%"
               >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
@@ -537,10 +548,10 @@ export function DashboardPage() {
                 />
                 <YAxis
                   tickFormatter={fmtAxis}
-                  tick={{ fontSize: 11, fill: '#6b7280' }}
+                  tick={{ fontSize: 9, fill: '#9ca3af' }}
                   axisLine={false}
                   tickLine={false}
-                  width={42}
+                  width={32}
                 />
                 <Tooltip content={<ChartTooltip />} cursor={{ fill: '#f9fafb' }} />
                 <Legend iconType="square" iconSize={10} wrapperStyle={legendStyle} />
