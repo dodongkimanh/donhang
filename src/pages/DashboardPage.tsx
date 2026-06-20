@@ -482,7 +482,7 @@ export function DashboardPage() {
                   axisLine={false}
                   tickLine={false}
                 />
-                <Tooltip content={<ChartTooltip />} cursor={false} />
+                <Tooltip content={<ChartTooltip />} cursor={false} wrapperStyle={{ outline: 'none', border: 'none', boxShadow: 'none' }} />
                 {visibleStatuses.map((status) => (
                   <Bar
                     key={status}
@@ -571,6 +571,7 @@ export function DashboardPage() {
                   content={<ChartTooltip />}
                   cursor={false}
                   labelFormatter={(v) => `Ngày ${v}`}
+                  wrapperStyle={{ outline: 'none', border: 'none', boxShadow: 'none' }}
                 />
                 <Legend iconType="square" iconSize={10} wrapperStyle={legendStyle} />
                 <Bar dataKey="Tháng trước" fill="#bfdbfe" maxBarSize={12} />
@@ -596,7 +597,7 @@ export function DashboardPage() {
                   tickLine={false}
                   width={28}
                 />
-                <Tooltip content={<ChartTooltip />} cursor={false} />
+                <Tooltip content={<ChartTooltip />} cursor={false} wrapperStyle={{ outline: 'none', border: 'none', boxShadow: 'none' }} />
                 <Legend iconType="square" iconSize={10} wrapperStyle={legendStyle} />
                 <Bar dataKey="Năm trước" fill="#c7d2fe" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="Năm nay" fill="#6366f1" radius={[4, 4, 0, 0]} />
