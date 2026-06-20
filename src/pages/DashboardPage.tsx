@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Package, ShoppingCart, Users, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Package, ShoppingCart, Users, TrendingUp, ChevronLeft, ChevronRight, ChevronDown, Filter } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip,
   LabelList, Legend, ResponsiveContainer,
@@ -186,6 +186,7 @@ export function DashboardPage() {
 
   // Toggle lọc trạng thái (set chứa các trạng thái đang ẩn)
   const [disabledStatuses, setDisabledStatuses] = useState<Set<string>>(new Set())
+  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false)
 
   function toggleStatus(status: string) {
     setDisabledStatuses(prev => {
@@ -365,9 +366,57 @@ export function DashboardPage() {
             </span>
           </h2>
 
-          {/* Toggle trạng thái – hiển thị tất cả */}
-          <div className="flex flex-wrap gap-1.5 mb-4">
-            {/* Chọn tất cả */}
+          {/* Mobile: dropdown lọc trạng thái */}
+          <div className="sm:hidden mb-4 relative">
+            <button
+              onClick={() => setStatusDropdownOpen(v => !v)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 w-full justify-between"
+            >
+              <span className="flex items-center gap-2">
+                <Filter size={14} className="text-gray-400" />
+                Trạng thái ({ALL_STATUSES.length - disabledStatuses.size}/{ALL_STATUSES.length})
+              </span>
+              <ChevronDown size={16} className={`text-gray-400 transition-transform ${statusDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {statusDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setStatusDropdownOpen(false)} />
+                <div className="absolute top-full left-0 right-0 z-20 mt-1 bg-white rounded-xl border border-gray-200 shadow-lg p-2 max-h-[300px] overflow-y-auto">
+                  <button
+                    onClick={() => setDisabledStatuses(prev => prev.size === 0 ? new Set(ALL_STATUSES) : new Set())}
+                    className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50"
+                  >
+                    <span className={`w-4 h-4 rounded border-2 flex items-center justify-center ${disabledStatuses.size === 0 ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
+                      {disabledStatuses.size === 0 && <span className="text-white text-[10px]">✓</span>}
+                    </span>
+                    Chọn tất cả
+                  </button>
+                  {ALL_STATUSES.map((status) => {
+                    const enabled = !disabledStatuses.has(status)
+                    const color = STATUS_COLORS[status] ?? '#94a3b8'
+                    return (
+                      <button
+                        key={status}
+                        onClick={() => toggleStatus(status)}
+                        className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm hover:bg-gray-50"
+                      >
+                        <span
+                          className="w-4 h-4 rounded border-2 flex items-center justify-center"
+                          style={{ borderColor: color, backgroundColor: enabled ? color : 'transparent' }}
+                        >
+                          {enabled && <span className="text-white text-[10px]">✓</span>}
+                        </span>
+                        <span style={{ color: enabled ? color : '#9ca3af' }}>{STATUS_LABELS[status]}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Desktop: buttons lọc trạng thái */}
+          <div className="hidden sm:flex flex-wrap gap-1.5 mb-4">
             {(() => {
               const allOn = disabledStatuses.size === 0
               return (
@@ -399,7 +448,6 @@ export function DashboardPage() {
                     backgroundColor: enabled ? `${color}18` : '#f9fafb',
                     opacity: enabled ? (hasData ? 1 : 0.4) : 0.35,
                   }}
-                  title={!hasData ? 'Chưa có đơn' : undefined}
                 >
                   <span className="w-2 h-2 rounded-sm" style={{ background: enabled && hasData ? color : '#d1d5db' }} />
                   {STATUS_LABELS[status]}
