@@ -980,17 +980,17 @@ export function InventoryPage() {
       ) : (
         <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm table-fixed" style={{ minWidth: 1100 }}>
+            <table className="w-full text-sm" style={{ minWidth: 1100 }}>
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  <th style={{ width: 100 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Loại</th>
-                  <th style={{ width: 210 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Sản Phẩm</th>
-                  <th style={{ width: 150 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Nhà Cung Cấp</th>
-                  <th style={{ width: 80 }} className="text-right font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Số Lượng</th>
-                  <th style={{ width: 110 }} className="text-right font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Đơn Giá</th>
-                  <th style={{ width: 170 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Ghi Chú</th>
-                  <th style={{ width: 140 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Người GN</th>
-                  <th style={{ width: 130 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Thời Gian</th>
+                  <th style={{ width: 90 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Loại</th>
+                  <th style={{ width: 180 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Sản Phẩm</th>
+                  <th style={{ width: 130 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Nhà Cung Cấp</th>
+                  <th style={{ width: 70 }} className="text-right font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Số Lượng</th>
+                  <th style={{ width: 100 }} className="text-right font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Đơn Giá</th>
+                  <th className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Ghi Chú</th>
+                  <th style={{ width: 120 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Người GN</th>
+                  <th style={{ width: 120 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Thời Gian</th>
                   <th style={{ width: 56 }} className="px-4 py-3"></th>
                 </tr>
               </thead>
@@ -1024,7 +1024,7 @@ export function InventoryPage() {
                         </td>
                         <td className="px-4 py-3 text-right text-gray-700 font-medium">{t.quantity}</td>
                         <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(t.unit_price)}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500 max-w-[160px] truncate">{t.note ?? '–'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500 whitespace-normal break-words">{t.note ?? '–'}</td>
                         <td className="px-4 py-3 text-sm text-gray-500">{t.profile?.full_name ?? '–'}</td>
                         <td className="px-4 py-3 text-sm text-gray-400 whitespace-nowrap">{formatDate(t.created_at)}</td>
                         <td className="px-4 py-3">
@@ -1103,7 +1103,7 @@ export function InventoryPage() {
                             </div>
                           ) : formatCurrency(first.unit_price)}
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-500 max-w-[160px] truncate">{first.note ?? '–'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500 whitespace-normal break-words">{first.note ?? '–'}</td>
                         <td className="px-4 py-3 text-sm text-gray-500">{first.profile?.full_name ?? '–'}</td>
                         <td className="px-4 py-3 text-sm text-gray-400 whitespace-nowrap">{formatDate(first.created_at)}</td>
                         <td className="px-4 py-3">
@@ -1182,7 +1182,7 @@ export function InventoryPage() {
                           </td>
                           <td className="px-4 py-2.5 text-right text-gray-700 text-sm">{t.quantity}</td>
                           <td className="px-4 py-2.5 text-right text-gray-600 text-sm">{formatCurrency(t.unit_price)}</td>
-                          <td className="px-4 py-2.5 text-sm text-gray-400 max-w-[160px] truncate">{t.note ?? '–'}</td>
+                          <td className="px-4 py-2.5 text-sm text-gray-400 whitespace-normal break-words">{t.note ?? '–'}</td>
                           <td className="px-4 py-2.5" />
                           <td className="px-4 py-2.5" />
                           <td className="px-4 py-2.5">
