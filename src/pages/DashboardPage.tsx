@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Package, ShoppingCart, Users, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  BarChart, Bar, XAxis, YAxis, Tooltip,
   LabelList, Legend, ResponsiveContainer,
 } from 'recharts'
 import { supabase } from '@/lib/supabase'
@@ -45,9 +45,9 @@ const ALL_STATUSES = Object.keys(STATUS_LABELS)
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmtAxis(v: number): string {
-  if (v >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(1)}B`
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(0)}M`
-  if (v >= 1_000) return `${(v / 1_000).toFixed(0)}K`
+  if (v >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(1)}`
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(0)}`
+  if (v >= 1_000) return `${(v / 1_000).toFixed(0)}`
   return String(v)
 }
 
@@ -60,7 +60,7 @@ function ChartTooltip({ active, payload, label, labelFormatter }: any) {
   if (!nonZero.length) return null
   const displayLabel = typeof labelFormatter === 'function' ? labelFormatter(label) : label
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs min-w-[180px]">
+    <div className="bg-white rounded-lg shadow-md p-3 text-xs min-w-[180px]">
       <p className="font-semibold text-gray-800 mb-2">{displayLabel}</p>
       {nonZero.map((p: any) => (
         <div key={p.dataKey} className="flex items-center justify-between gap-3 py-0.5">
@@ -415,7 +415,6 @@ export function DashboardPage() {
                 data={empChartData}
                 margin={{ top: 4, right: 72, bottom: 4, left: 4 }}
               >
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
                 <XAxis
                   type="number"
                   tickFormatter={fmtAxis}
@@ -502,7 +501,6 @@ export function DashboardPage() {
                 barCategoryGap="20%"
                 barGap={1}
               >
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                 <XAxis
                   dataKey="day"
                   tick={{ fontSize: 9, fill: '#6b7280' }}
@@ -532,7 +530,6 @@ export function DashboardPage() {
                 margin={{ top: 4, right: 8, bottom: 4, left: 0 }}
                 barCategoryGap="25%"
               >
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                 <XAxis
                   dataKey="month"
                   tick={{ fontSize: 11, fill: '#374151' }}
