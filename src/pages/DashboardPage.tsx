@@ -357,7 +357,7 @@ export function DashboardPage() {
 
       {/* Chart 1: Doanh số nhân viên theo trạng thái (admin / kế toán) */}
       {isPrivileged && salesByEmployee.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm p-5">
+        <div className="bg-white rounded-xl p-5">
           <h2 className="text-base font-semibold text-gray-900 mb-3">
             Doanh Số Theo Nhân Viên &amp; Trạng Thái
             <span className="ml-2 text-sm font-normal text-gray-400">
@@ -425,8 +425,12 @@ export function DashboardPage() {
                 <YAxis
                   type="category"
                   dataKey="name"
-                  width={110}
-                  tick={{ fontSize: 12, fill: '#374151' }}
+                  width={120}
+                  tick={({ x, y, payload }: { x: number; y: number; payload: { value: string } }) => (
+                    <text x={x - 118} y={y} dy={4} textAnchor="start" fontSize={12} fill="#374151">
+                      {payload.value}
+                    </text>
+                  )}
                   axisLine={false}
                   tickLine={false}
                 />
@@ -455,7 +459,7 @@ export function DashboardPage() {
       )}
 
       {/* Chart 2+3: So sánh doanh số – có bộ lọc tháng / năm */}
-      <div className="bg-white rounded-xl shadow-sm p-5">
+      <div className="bg-white rounded-xl p-5">
         {/* Header + toggle */}
         <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
           <div>
