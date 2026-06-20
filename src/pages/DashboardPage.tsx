@@ -456,14 +456,15 @@ export function DashboardPage() {
           </div>
 
           <div className="space-y-2">
-            {empChartData.map((emp) => {
+            {empChartData.map((emp: Record<string, number | string>) => {
               const total = emp._total as number
-              const maxVal = Math.max(...empChartData.map(e => e._total as number), 1)
+              const name = emp.name as string
+              const maxVal = Math.max(...empChartData.map((e: Record<string, number | string>) => e._total as number), 1)
               const pct = (total / maxVal) * 100
               return (
-                <div key={emp.name as string} className="flex items-center gap-2">
+                <div key={name} className="flex items-center gap-2">
                   <div className="w-[72px] sm:w-[100px] flex-shrink-0 text-xs text-gray-700 leading-tight text-right pr-1">
-                    {emp.name as string}
+                    {name}
                   </div>
                   <div className="flex-1 flex items-center gap-2 min-w-0">
                     <div className="flex-1 h-5 bg-gray-100 rounded-sm overflow-hidden">
