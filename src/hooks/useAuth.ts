@@ -19,12 +19,17 @@ export function useAuthInit() {
   const { setUser, setProfile, setLoading, reset } = useAuthStore()
 
   useEffect(() => {
+    const timeout = setTimeout(() => {
+      setLoading(false)
+    }, 8000)
+
     supabase.auth.getSession().then(async ({ data: { session } }: { data: { session: Session | null } }) => {
       if (session?.user) {
         const p = await fetchProfile(session.user.id)
         if (p?.is_locked) {
           await supabase.auth.signOut()
           reset()
+          clearTimeout(timeout)
           setLoading(false)
           return
         }
@@ -33,6 +38,10 @@ export function useAuthInit() {
       } else {
         setUser(null)
       }
+      clearTimeout(timeout)
+      setLoading(false)
+    }).catch(() => {
+      clearTimeout(timeout)
       setLoading(false)
     })
 
