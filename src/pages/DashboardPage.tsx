@@ -426,9 +426,9 @@ export function DashboardPage() {
                   type="category"
                   dataKey="name"
                   width={120}
-                  tick={({ x, y, payload }: { x: number; y: number; payload: { value: string } }) => (
-                    <text x={x - 118} y={y} dy={4} textAnchor="start" fontSize={12} fill="#374151">
-                      {payload.value}
+                  tick={(props: any) => (// eslint-disable-line @typescript-eslint/no-explicit-any
+                    <text x={Number(props.x) - 118} y={Number(props.y)} dy={4} textAnchor="start" fontSize={12} fill="#374151">
+                      {props.payload.value}
                     </text>
                   )}
                   axisLine={false}
