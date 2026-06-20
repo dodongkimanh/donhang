@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Package, ShoppingCart, Users,
-  LogOut, Tag, ArrowUpDown, UserCircle, Menu, X, Truck, MapPin, PhoneCall, ScanSearch, KeyRound,
+  LogOut, Tag, ArrowUpDown, UserCircle, Menu, X, Truck, MapPin, PhoneCall, ScanSearch, KeyRound, Download,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
+import { usePWAInstall } from '@/hooks/usePWAInstall'
 import { supabase } from '@/lib/supabase'
 import { Modal } from '@/components/ui/Modal'
+import IOSInstallGuide from '@/components/ui/IOSInstallPrompt'
 import toast from 'react-hot-toast'
 
 interface NavItem {
@@ -40,6 +42,7 @@ const ROLE_COLOR = {
 
 export function TopNav() {
   const { profile, signOut } = useAuth()
+  const { canInstall, install, showIOSGuide, setShowIOSGuide } = usePWAInstall()
   const [mobileOpen, setMobileOpen]   = useState(false)
   const [pwModalOpen, setPwModalOpen] = useState(false)
   const [newPw, setNewPw]             = useState('')
@@ -119,7 +122,16 @@ export function TopNav() {
               </span>
             </div>
           )}
-          {/* Đổi mật khẩu - tất cả user */}
+          {canInstall && (
+            <button
+              onClick={install}
+              className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm font-medium bg-white/20 text-white hover:bg-white/30 transition-colors animate-pulse"
+              title="Cài đặt ứng dụng"
+            >
+              <Download size={15} />
+              <span className="hidden sm:inline">Cài App</span>
+            </button>
+          )}
           <button
             onClick={() => { setPwModalOpen(true); setNewPw(''); setConfirmPw('') }}
             className="p-1.5 rounded-lg text-blue-100 hover:bg-white/10 hover:text-white transition-colors"
@@ -208,6 +220,7 @@ export function TopNav() {
           </div>
         </form>
       </Modal>
+      <IOSInstallGuide open={showIOSGuide} onClose={() => setShowIOSGuide(false)} />
     </>
   )
 }

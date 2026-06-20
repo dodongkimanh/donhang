@@ -16,6 +16,7 @@ import { SuppliersPage } from '@/pages/SuppliersPage'
 import { RoutePlanningPage } from '@/pages/RoutePlanningPage'
 import { StockCallPage } from '@/pages/StockCallPage'
 import { BarcodeTrackerPage } from '@/pages/BarcodeTrackerPage'
+import PWAUpdatePrompt from '@/components/ui/PWAUpdatePrompt'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -179,6 +180,7 @@ export default function App() {
       <BrowserRouter>
         <AppRoutes />
         <Toaster position="top-right" />
+        <PWAUpdatePrompt />
       </BrowserRouter>
     </QueryClientProvider>
   )

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Package, ShoppingCart, Users, TrendingUp } from 'lucide-react'
+import { Package, ShoppingCart, Users, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   LabelList, Legend, ResponsiveContainer,
@@ -101,6 +101,25 @@ export function DashboardPage() {
   const { profile, isAdmin, isAccountant, isEmployee } = useAuth()
   const isPrivileged = isAdmin || isAccountant
 
+  // ── Month selector ──────────────────────────────────────────────────────
+  const now = new Date()
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear())
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth()) // 0-indexed
+
+  const isCurrentMonth = selectedYear === now.getFullYear() && selectedMonth === now.getMonth()
+
+  function prevMonth() {
+    if (selectedMonth === 0) { setSelectedMonth(11); setSelectedYear(y => y - 1) }
+    else setSelectedMonth(m => m - 1)
+  }
+  function nextMonth() {
+    if (selectedYear > now.getFullYear() || (selectedYear === now.getFullYear() && selectedMonth >= now.getMonth())) return
+    if (selectedMonth === 11) { setSelectedMonth(0); setSelectedYear(y => y + 1) }
+    else setSelectedMonth(m => m + 1)
+  }
+
+  const monthLabel = `Tháng ${selectedMonth + 1}/${selectedYear}`
+
   // ── Static counts ────────────────────────────────────────────────────────
 
   const { data: productCount = 0 } = useQuery({
@@ -136,21 +155,19 @@ export function DashboardPage() {
     enabled: !!profile,
   })
 
-  // ── Derived totals – chỉ tính tháng hiện tại ────────────────────────────
+  // ── Derived totals – theo tháng được chọn ────────────────────────────
 
-  const _now = new Date()
   const { thisMonthOrders, totalRevenue, totalOrders, todayOrders } = useMemo(() => {
-    const now = new Date()
-    const thisMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-    const todayStr = now.toISOString().split('T')[0]
-    const monthOrders = allOrders.filter(o => o.created_at.startsWith(thisMonthPrefix))
+    const monthPrefix = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`
+    const todayStr = new Date().toISOString().split('T')[0]
+    const monthOrders = allOrders.filter(o => o.created_at.startsWith(monthPrefix))
     return {
       thisMonthOrders: monthOrders,
       totalRevenue: monthOrders.reduce((s, o) => s + o.final_amount, 0),
       totalOrders: monthOrders.length,
       todayOrders: allOrders.filter(o => o.created_at.startsWith(todayStr)).length,
     }
-  }, [allOrders])
+  }, [allOrders, selectedYear, selectedMonth])
 
   // ── Chart 1 data: Doanh số theo nhân viên + trạng thái (tháng này) ──────
 
@@ -206,15 +223,14 @@ export function DashboardPage() {
     return { empChartData: data, visibleStatuses: visible }
   }, [salesByEmployee, activeStatuses, disabledStatuses])
 
-  // ── Chart 2 data: Tháng này vs tháng trước – theo từng ngày ────────────
+  // ── Chart 2 data: Tháng được chọn vs tháng trước – theo từng ngày ───
 
   const monthData = useMemo(() => {
-    const now = new Date()
-    const thisYear = now.getFullYear()
-    const thisMonth = now.getMonth() // 0-indexed
-    const prevMonth = thisMonth === 0 ? 11 : thisMonth - 1
-    const prevYear = thisMonth === 0 ? thisYear - 1 : thisYear
-    const daysInMonth = new Date(thisYear, thisMonth + 1, 0).getDate()
+    const curY = selectedYear
+    const curM = selectedMonth
+    const prevM = curM === 0 ? 11 : curM - 1
+    const prevY = curM === 0 ? curY - 1 : curY
+    const daysInMonth = new Date(curY, curM + 1, 0).getDate()
 
     const result = Array.from({ length: daysInMonth }, (_, i) => ({
       day: String(i + 1),
@@ -228,14 +244,14 @@ export function DashboardPage() {
       const m = d.getMonth()
       const day = d.getDate()
 
-      if (y === thisYear && m === thisMonth) {
+      if (y === curY && m === curM) {
         result[day - 1]['Tháng này'] += order.final_amount
-      } else if (y === prevYear && m === prevMonth && day <= daysInMonth) {
+      } else if (y === prevY && m === prevM && day <= daysInMonth) {
         result[day - 1]['Tháng trước'] += order.final_amount
       }
     }
     return result
-  }, [allOrders])
+  }, [allOrders, selectedYear, selectedMonth])
 
   // ── Chart 3 data: Năm nay vs năm trước – theo từng tháng ───────────────
 
@@ -264,13 +280,14 @@ export function DashboardPage() {
 
   // ── Stat cards ───────────────────────────────────────────────────────────
 
+  const monthShort = `T${selectedMonth + 1}`
   const stats: StatCard[] = [
     isEmployee
-      ? { title: 'Doanh Số Tháng Này', value: formatCurrency(totalRevenue), icon: <TrendingUp size={24} />, color: 'bg-blue-500' }
-      : { title: 'Tổng Hàng Hóa',      value: productCount,                 icon: <Package size={24} />,    color: 'bg-blue-500' },
-    { title: 'Đơn Tháng Này',    value: totalOrders,   icon: <ShoppingCart size={24} />, color: 'bg-green-500'  },
-    { title: 'Đơn Hôm Nay',      value: todayOrders,   icon: <TrendingUp size={24} />,   color: 'bg-orange-500' },
-    { title: 'Tổng Khách Hàng',  value: customerCount, icon: <Users size={24} />,        color: 'bg-purple-500' },
+      ? { title: `Doanh Số ${monthShort}`, value: formatCurrency(totalRevenue), icon: <TrendingUp size={24} />, color: 'bg-blue-500' }
+      : { title: 'Tổng Hàng Hóa',          value: productCount,                 icon: <Package size={24} />,    color: 'bg-blue-500' },
+    { title: `Đơn ${monthShort}`,    value: totalOrders,   icon: <ShoppingCart size={24} />, color: 'bg-green-500'  },
+    { title: 'Đơn Hôm Nay',          value: todayOrders,   icon: <TrendingUp size={24} />,   color: 'bg-orange-500' },
+    { title: 'Tổng Khách Hàng',      value: customerCount, icon: <Users size={24} />,        color: 'bg-purple-500' },
   ]
 
   const empChartHeight = Math.max(120, salesByEmployee.length * 36 + 40)
@@ -280,10 +297,30 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Tổng Quan</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Xin chào, {profile?.full_name}</p>
+      {/* Header + Month selector */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Tổng Quan</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Xin chào, {profile?.full_name}</p>
+        </div>
+        <div className="flex items-center gap-1 bg-white rounded-xl shadow-sm px-1 py-1">
+          <button
+            onClick={prevMonth}
+            className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors"
+          >
+            <ChevronLeft size={20} />
+          </button>
+          <span className="text-sm font-semibold text-gray-800 min-w-[100px] text-center select-none">
+            {monthLabel}
+          </span>
+          <button
+            onClick={nextMonth}
+            disabled={isCurrentMonth}
+            className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <ChevronRight size={20} />
+          </button>
+        </div>
       </div>
 
       {/* Stat cards */}
@@ -305,10 +342,10 @@ export function DashboardPage() {
       {/* Doanh thu tháng này (admin / kế toán) */}
       {isPrivileged && (
         <div className="bg-white rounded-xl shadow-sm px-4 py-3">
-          <h2 className="text-xs font-medium text-gray-500 mb-0.5">Doanh Thu Tháng Này</h2>
+          <h2 className="text-xs font-medium text-gray-500 mb-0.5">Doanh Thu {monthLabel}</h2>
           <p className="text-2xl sm:text-3xl font-bold text-blue-600">{formatCurrency(totalRevenue)}</p>
           <p className="text-xs text-gray-400 mt-0.5">
-            Tổng {totalOrders} đơn trong tháng {_now.getMonth() + 1}/{_now.getFullYear()}
+            Tổng {totalOrders} đơn trong {monthLabel.toLowerCase()}
           </p>
         </div>
       )}
@@ -319,7 +356,7 @@ export function DashboardPage() {
           <h2 className="text-base font-semibold text-gray-900 mb-3">
             Doanh Số Theo Nhân Viên &amp; Trạng Thái
             <span className="ml-2 text-sm font-normal text-gray-400">
-              Tháng {_now.getMonth() + 1}/{_now.getFullYear()}
+              {monthLabel}
             </span>
           </h2>
 
