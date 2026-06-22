@@ -495,6 +495,43 @@ function ReturnTicketModal({
       }
       if (ticketInsertError) throw ticketInsertError
 
+      // Tạo phiếu xuất kho cho hàng đổi mới gửi đi
+      if (exchangeItemsPayload.length > 0) {
+        const exportBatchId = crypto.randomUUID()
+        for (const ei of exchangeItemsPayload) {
+          if (!ei.product_id) continue
+          const qty = ei.quantity
+          if (qty <= 0) continue
+
+          // Tìm NCC có tồn kho nhiều nhất để trừ
+          const { data: psList } = await supabase
+            .from('product_suppliers')
+            .select('id, supplier_id, quantity, cost_price')
+            .eq('product_id', ei.product_id)
+            .gt('quantity', 0)
+            .order('quantity', { ascending: false })
+            .limit(1)
+          const ps = psList?.[0] as { id: string; supplier_id: string; quantity: number; cost_price: number } | undefined
+
+          if (ps) {
+            await supabase.from('product_suppliers')
+              .update({ quantity: Math.max(0, ps.quantity - qty) })
+              .eq('id', ps.id)
+          }
+
+          await supabase.from('inventory_transactions').insert({
+            product_id: ei.product_id,
+            supplier_id: ps?.supplier_id ?? null,
+            type: 'export',
+            quantity: qty,
+            unit_price: ps?.cost_price ?? ei.unit_price,
+            note: `Xuất đổi trả theo đơn ${order.order_number} - ${ticketNumber}`,
+            created_by: profile?.id ?? null,
+            batch_id: exportBatchId,
+          })
+        }
+      }
+
       // Cập nhật trạng thái đơn: nếu tất cả sản phẩm đều được trả → returned; ngược lại → partial_return
       const allReturned = items.length > 0 && items.every((item) => returnedSel[item.id]?.checked && returnedSel[item.id].qty >= item.quantity)
       const newStatus: OrderStatus = allReturned ? 'returned' : 'partial_return'
@@ -502,6 +539,9 @@ function ReturnTicketModal({
       await supabase.from('orders').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', order.id)
 
       queryClient.invalidateQueries({ queryKey: ['orders'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['products-simple'] })
       toast.success(`Đã tạo phiếu đổi trả ${ticketNumber}`)
       onClose()
     } catch {
