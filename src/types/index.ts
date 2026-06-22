@@ -216,6 +216,7 @@ export interface ReturnTicket {
   note?: string
   created_by?: string
   created_at: string
+  exchange_exported?: boolean
 }
 
 export interface RouteOrder {

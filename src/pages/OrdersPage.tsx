@@ -367,8 +367,8 @@ interface ExchangeItem {
 }
 
 function ReturnTicketModal({
-  isOpen, onClose, order, onExportNeeded,
-}: { isOpen: boolean; onClose: () => void; order: Order | null; onExportNeeded?: (orderNumber: string, ticketNumber: string, items: ExchangeItem[]) => void }) {
+  isOpen, onClose, order,
+}: { isOpen: boolean; onClose: () => void; order: Order | null }) {
   const queryClient = useQueryClient()
   const { profile } = useAuth()
 
@@ -503,9 +503,6 @@ function ReturnTicketModal({
 
       queryClient.invalidateQueries({ queryKey: ['orders'] })
       toast.success(`Đã tạo phiếu đổi trả ${ticketNumber}`)
-      if (exchangeItems.length > 0 && onExportNeeded) {
-        onExportNeeded(order.order_number, ticketNumber, [...exchangeItems])
-      }
       onClose()
     } catch {
       toast.error('Có lỗi khi tạo phiếu đổi trả')
@@ -2073,6 +2070,7 @@ interface ScanItem {
 // ── Export Return Modal: quét mã vạch xuất hàng đổi trả ─────────────────────
 
 interface ExportReturnInfo {
+  ticketId: string
   orderNumber: string
   ticketNumber: string
   items: ExchangeItem[]
@@ -2188,9 +2186,11 @@ function ExportReturnModal({ info, onClose }: { info: ExportReturnInfo; onClose:
           batch_id: exportBatchId,
         })
       }
+      await supabase.from('return_tickets').update({ exchange_exported: true }).eq('id', info.ticketId)
       queryClient.invalidateQueries({ queryKey: ['inventory-transactions'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['products-simple'] })
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
       toast.success('Xuất kho hàng đổi trả thành công!')
       onClose()
     } catch {
@@ -3177,15 +3177,43 @@ export function OrdersPage() {
                         )}
                         {/* Hiển thị phiếu đổi trả hiện có */}
                         {!isEmployee && (order.return_tickets?.length ?? 0) > 0 && (
-                          <div className="mt-1.5 space-y-0.5">
-                            {order.return_tickets!.map((rt) => (
-                              <div key={rt.id} className="flex items-center gap-1 text-[10px] text-orange-600 font-mono bg-orange-50 rounded px-1.5 py-0.5">
-                                <Receipt size={9} />
-                                <span className="font-semibold">{rt.ticket_number}</span>
-                                {rt.exchange_items.length > 0 && <span className="text-blue-500">↔ đổi {rt.exchange_items.length} sp</span>}
-                                {rt.returned_items.length > 0 && <span className="text-red-400">↩ trả {rt.returned_items.length} sp</span>}
-                              </div>
-                            ))}
+                          <div className="mt-1.5 space-y-1">
+                            {order.return_tickets!.map((rt) => {
+                              const hasExchange = rt.exchange_items.length > 0
+                              const exported = rt.exchange_exported
+                              return (
+                                <div key={rt.id}>
+                                  <div className="flex items-center gap-1 text-[10px] text-orange-600 font-mono bg-orange-50 rounded px-1.5 py-0.5">
+                                    <Receipt size={9} />
+                                    <span className="font-semibold">{rt.ticket_number}</span>
+                                    {rt.returned_items.length > 0 && <span className="text-red-400">↩ trả {rt.returned_items.length} sp</span>}
+                                    {hasExchange && exported && <span className="text-green-600">✓ đã xuất {rt.exchange_items.length} sp</span>}
+                                  </div>
+                                  {hasExchange && !exported && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setExportReturnInfo({
+                                          ticketId: rt.id,
+                                          orderNumber: order.order_number,
+                                          ticketNumber: rt.ticket_number,
+                                          items: rt.exchange_items.map(ei => ({
+                                            product_id: ei.product_id ?? '',
+                                            name: ei.name,
+                                            qty: ei.quantity,
+                                            price: ei.unit_price,
+                                          })),
+                                        })
+                                      }}
+                                      className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 rounded px-2 py-1 transition-colors"
+                                    >
+                                      <ArrowUpCircle size={11} />
+                                      Xuất kho đổi ({rt.exchange_items.length} sp)
+                                    </button>
+                                  )}
+                                </div>
+                              )
+                            })}
                           </div>
                         )}
                         {canEdit && (() => {
@@ -3465,9 +3493,6 @@ export function OrdersPage() {
         isOpen={!!returningOrder}
         onClose={() => setReturningOrder(null)}
         order={returningOrder}
-        onExportNeeded={(orderNumber, ticketNumber, items) => {
-          setExportReturnInfo({ orderNumber, ticketNumber, items })
-        }}
       />
 
       {exportReturnInfo && (
