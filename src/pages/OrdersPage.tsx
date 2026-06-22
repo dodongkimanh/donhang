@@ -367,8 +367,8 @@ interface ExchangeItem {
 }
 
 function ReturnTicketModal({
-  isOpen, onClose, order,
-}: { isOpen: boolean; onClose: () => void; order: Order | null }) {
+  isOpen, onClose, order, onExportNeeded,
+}: { isOpen: boolean; onClose: () => void; order: Order | null; onExportNeeded?: (orderNumber: string, ticketNumber: string, items: ExchangeItem[]) => void }) {
   const queryClient = useQueryClient()
   const { profile } = useAuth()
 
@@ -495,43 +495,6 @@ function ReturnTicketModal({
       }
       if (ticketInsertError) throw ticketInsertError
 
-      // Tạo phiếu xuất kho cho hàng đổi mới gửi đi
-      if (exchangeItemsPayload.length > 0) {
-        const exportBatchId = crypto.randomUUID()
-        for (const ei of exchangeItemsPayload) {
-          if (!ei.product_id) continue
-          const qty = ei.quantity
-          if (qty <= 0) continue
-
-          // Tìm NCC có tồn kho nhiều nhất để trừ
-          const { data: psList } = await supabase
-            .from('product_suppliers')
-            .select('id, supplier_id, quantity, cost_price')
-            .eq('product_id', ei.product_id)
-            .gt('quantity', 0)
-            .order('quantity', { ascending: false })
-            .limit(1)
-          const ps = psList?.[0] as { id: string; supplier_id: string; quantity: number; cost_price: number } | undefined
-
-          if (ps) {
-            await supabase.from('product_suppliers')
-              .update({ quantity: Math.max(0, ps.quantity - qty) })
-              .eq('id', ps.id)
-          }
-
-          await supabase.from('inventory_transactions').insert({
-            product_id: ei.product_id,
-            supplier_id: ps?.supplier_id ?? null,
-            type: 'export',
-            quantity: qty,
-            unit_price: ps?.cost_price ?? ei.unit_price,
-            note: `Xuất đổi trả theo đơn ${order.order_number} - ${ticketNumber}`,
-            created_by: profile?.id ?? null,
-            batch_id: exportBatchId,
-          })
-        }
-      }
-
       // Cập nhật trạng thái đơn: nếu tất cả sản phẩm đều được trả → returned; ngược lại → partial_return
       const allReturned = items.length > 0 && items.every((item) => returnedSel[item.id]?.checked && returnedSel[item.id].qty >= item.quantity)
       const newStatus: OrderStatus = allReturned ? 'returned' : 'partial_return'
@@ -539,10 +502,10 @@ function ReturnTicketModal({
       await supabase.from('orders').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', order.id)
 
       queryClient.invalidateQueries({ queryKey: ['orders'] })
-      queryClient.invalidateQueries({ queryKey: ['inventory-transactions'] })
-      queryClient.invalidateQueries({ queryKey: ['products'] })
-      queryClient.invalidateQueries({ queryKey: ['products-simple'] })
       toast.success(`Đã tạo phiếu đổi trả ${ticketNumber}`)
+      if (exchangeItems.length > 0 && onExportNeeded) {
+        onExportNeeded(order.order_number, ticketNumber, [...exchangeItems])
+      }
       onClose()
     } catch {
       toast.error('Có lỗi khi tạo phiếu đổi trả')
@@ -2107,6 +2070,265 @@ interface ScanItem {
   stockError: string
 }
 
+// ── Export Return Modal: quét mã vạch xuất hàng đổi trả ─────────────────────
+
+interface ExportReturnInfo {
+  orderNumber: string
+  ticketNumber: string
+  items: ExchangeItem[]
+}
+
+function ExportReturnModal({ info, onClose }: { info: ExportReturnInfo; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const { profile } = useAuth()
+  const [scanItems, setScanItems] = useState<ScanItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [scanInput, setScanInput] = useState('')
+  const [scanMsg, setScanMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [showCamera, setShowCamera] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      const productIds = [...new Set(info.items.map(i => i.product_id))]
+      const { data: psList } = await supabase
+        .from('product_suppliers').select('*, supplier:suppliers(*)').in('product_id', productIds)
+      const ps = (psList ?? []) as ProductSupplier[]
+
+      setScanItems(info.items.map((ei) => ({
+        orderItemId: ei.product_id,
+        productId: ei.product_id,
+        productName: ei.name,
+        qty: ei.qty,
+        unit: '',
+        productCostPrice: ei.price,
+        barcodes: ps
+          .filter(p => p.product_id === ei.product_id)
+          .map(p => ({
+            psId: p.id,
+            barcode: p.barcode,
+            supplierId: p.supplier_id,
+            supplierName: (p.supplier as any)?.name ?? 'NCC',// eslint-disable-line @typescript-eslint/no-explicit-any
+            stock: p.quantity,
+            costPrice: p.cost_price,
+          })),
+        confirmedPsId: null,
+        scannedCount: 0,
+        stockError: '',
+      })))
+      setLoading(false)
+    }
+    load()
+  }, [info])
+
+  useEffect(() => {
+    if (!loading) setTimeout(() => inputRef.current?.focus(), 100)
+  }, [loading])
+
+  function handleScan(code: string) {
+    const trimmed = code.trim()
+    setScanInput('')
+    if (!trimmed) return
+    let matched = false
+    setScanItems(prev => {
+      const next = [...prev]
+      for (let i = 0; i < next.length; i++) {
+        const item = next[i]
+        if (item.scannedCount >= item.qty) continue
+        const ps = item.barcodes.find(b => b.barcode === trimmed)
+        if (!ps) continue
+        matched = true
+        if (item.confirmedPsId === null) {
+          if (ps.stock < item.qty) {
+            setScanMsg({ ok: false, text: `${item.productName}: tồn kho không đủ (còn ${ps.stock}, cần ${item.qty})` })
+            next[i] = { ...item, stockError: `Không đủ hàng: còn ${ps.stock}` }
+          } else {
+            next[i] = { ...item, confirmedPsId: ps.psId, scannedCount: 1, stockError: '' }
+            setScanMsg({ ok: true, text: `✓ ${item.productName} — ${ps.supplierName} (1/${item.qty})` })
+          }
+        } else {
+          const newCount = item.scannedCount + 1
+          next[i] = { ...item, scannedCount: newCount, stockError: '' }
+          setScanMsg({ ok: true, text: newCount >= item.qty
+            ? `✓ ${item.productName} — Hoàn tất! (${newCount}/${item.qty})`
+            : `✓ ${item.productName} (${newCount}/${item.qty})`
+          })
+        }
+        break
+      }
+      return next
+    })
+    if (!matched) setScanMsg({ ok: false, text: 'Mã vạch không khớp sản phẩm đổi trả nào' })
+    setTimeout(() => { setScanMsg(null); inputRef.current?.focus() }, 2500)
+  }
+
+  async function handleConfirm() {
+    if (!profile) return
+    setSaving(true)
+    try {
+      const exportBatchId = crypto.randomUUID()
+      for (const item of scanItems) {
+        if (!item.confirmedPsId && item.barcodes.length > 0) continue
+        const ps = item.barcodes.find(b => b.psId === item.confirmedPsId)
+        if (ps) {
+          const { data: freshPs } = await supabase.from('product_suppliers').select('quantity').eq('id', item.confirmedPsId!).single()
+          const currentStock = freshPs?.quantity ?? ps.stock
+          await supabase.from('product_suppliers').update({ quantity: Math.max(0, currentStock - item.qty) }).eq('id', item.confirmedPsId!)
+        }
+        await supabase.from('inventory_transactions').insert({
+          product_id: item.productId,
+          supplier_id: ps?.supplierId ?? null,
+          type: 'export',
+          quantity: item.qty,
+          unit_price: ps?.costPrice ?? item.productCostPrice,
+          note: `Xuất đổi trả theo đơn ${info.orderNumber} - ${info.ticketNumber}`,
+          created_by: profile.id,
+          batch_id: exportBatchId,
+        })
+      }
+      queryClient.invalidateQueries({ queryKey: ['inventory-transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['products-simple'] })
+      toast.success('Xuất kho hàng đổi trả thành công!')
+      onClose()
+    } catch {
+      toast.error('Có lỗi khi xuất kho')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const allScanned = scanItems.length > 0 &&
+    scanItems.every(item => item.scannedCount >= item.qty || item.barcodes.length === 0)
+  const totalScannedQty = scanItems.filter(i => i.barcodes.length > 0).reduce((s, i) => s + Math.min(i.scannedCount, i.qty), 0)
+  const totalRequiredQty = scanItems.filter(i => i.barcodes.length > 0).reduce((s, i) => s + i.qty, 0)
+
+  return (
+    <Modal isOpen onClose={onClose} title="Xuất Kho Hàng Đổi Trả" size="lg">
+      <div className="space-y-4">
+        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl p-3">
+          <ArrowUpCircle size={18} className="text-blue-600 flex-shrink-0" />
+          <div className="text-sm">
+            <p className="font-semibold text-blue-800">Đơn {info.orderNumber} — Phiếu {info.ticketNumber}</p>
+            <p className="text-blue-700">Bắn mã vạch từng sản phẩm đổi mới để xác nhận xuất kho.</p>
+          </div>
+        </div>
+
+        {!loading && (
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <ScanLine size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" />
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={scanInput}
+                  onChange={e => setScanInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleScan(scanInput) }}
+                  placeholder="Bắn hoặc nhập mã vạch..."
+                  className="w-full pl-10 pr-16 py-3 border-2 border-blue-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none text-sm font-mono bg-blue-50/40"
+                  autoFocus
+                />
+                {totalRequiredQty > 0 && (
+                  <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium ${totalScannedQty === totalRequiredQty ? 'text-green-600' : 'text-gray-400'}`}>
+                    {totalScannedQty}/{totalRequiredQty}
+                  </span>
+                )}
+              </div>
+              <button type="button" onClick={() => setShowCamera(true)} className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors flex-shrink-0">
+                <Camera size={18} />
+              </button>
+            </div>
+            {scanMsg && (
+              <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border ${scanMsg.ok ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                {scanMsg.ok ? <CheckCircle size={15} className="flex-shrink-0" /> : <AlertTriangle size={15} className="flex-shrink-0" />}
+                {scanMsg.text}
+              </div>
+            )}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
+        ) : (
+          <div className="space-y-2">
+            {scanItems.map(item => {
+              const fullyScanned = item.scannedCount >= item.qty
+              const partiallyScanned = item.scannedCount > 0 && !fullyScanned
+              const noBarcodes = item.barcodes.length === 0
+              const confirmedPs = item.barcodes.find(b => b.psId === item.confirmedPsId)
+              return (
+                <div key={item.productId} className={`rounded-xl border-2 p-3.5 transition-all ${
+                  fullyScanned ? 'border-green-300 bg-green-50'
+                  : partiallyScanned ? 'border-orange-300 bg-orange-50'
+                  : item.stockError ? 'border-red-200 bg-red-50'
+                  : noBarcodes ? 'border-amber-200 bg-amber-50'
+                  : 'border-gray-200 bg-white'
+                }`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-900 text-sm">{item.productName}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Cần quét: <strong>{item.qty}</strong>
+                        {confirmedPs && <span className="ml-2 text-blue-700">· NCC: {confirmedPs.supplierName}</span>}
+                        {noBarcodes && <span className="ml-2 text-amber-600">· Chưa có mã vạch</span>}
+                        {item.stockError && <span className="ml-2 text-red-600">· {item.stockError}</span>}
+                      </p>
+                      {!fullyScanned && !noBarcodes && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {item.barcodes.map(b => (
+                            <span key={b.psId} className={`text-[11px] px-2 py-1 rounded-lg border font-sans ${b.stock < item.qty ? 'border-red-200 bg-red-50 text-red-400' : 'border-gray-200 bg-gray-50 text-gray-500'}`}>
+                              {b.supplierName} · Tồn: {b.stock}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-shrink-0">
+                      {fullyScanned ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-600 text-white text-xs font-bold rounded-lg"><CheckCircle size={12} /> {item.qty}/{item.qty}</span>
+                      ) : partiallyScanned ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-500 text-white text-xs font-bold rounded-lg">{item.scannedCount}/{item.qty}</span>
+                      ) : noBarcodes ? (
+                        <span className="text-xs px-2 py-1 bg-amber-100 text-amber-700 rounded-lg font-medium">Bỏ qua</span>
+                      ) : (
+                        <span className="text-xs px-2 py-1 bg-gray-100 text-gray-500 rounded-lg font-medium">Chờ quét</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        <div className="flex gap-3 justify-end pt-2">
+          <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Bỏ qua</button>
+          <button
+            onClick={handleConfirm}
+            disabled={!allScanned || saving || loading}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white rounded-lg text-sm font-medium"
+          >
+            <CheckCircle size={16} />
+            {saving ? 'Đang xử lý...' : allScanned ? 'Xác Nhận Xuất Kho' : `Chờ quét (${totalScannedQty}/${totalRequiredQty})`}
+          </button>
+        </div>
+      </div>
+
+      {showCamera && (
+        <BarcodeScannerModal
+          onDetected={code => { setShowCamera(false); handleScan(code) }}
+          onClose={() => setShowCamera(false)}
+        />
+      )}
+    </Modal>
+  )
+}
+
+// ── Export Order Modal ────────────────────────────────────────────────────────
+
 function ExportOrderModal({ order, onClose, onDone }: { order: Order; onClose: () => void; onDone: () => void }) {
   const queryClient = useQueryClient()
   const { profile } = useAuth()
@@ -2493,6 +2715,7 @@ export function OrdersPage() {
   const [revealedProfit, setRevealedProfit] = useState(false)
   const [revertingOrder, setRevertingOrder] = useState<Order | null>(null)
   const [returningOrder, setReturningOrder] = useState<Order | null>(null)
+  const [exportReturnInfo, setExportReturnInfo] = useState<ExportReturnInfo | null>(null)
 
   const canEdit = isAdmin || isAccountant || isWarehouse
   const navigate = useNavigate()
@@ -3242,7 +3465,17 @@ export function OrdersPage() {
         isOpen={!!returningOrder}
         onClose={() => setReturningOrder(null)}
         order={returningOrder}
+        onExportNeeded={(orderNumber, ticketNumber, items) => {
+          setExportReturnInfo({ orderNumber, ticketNumber, items })
+        }}
       />
+
+      {exportReturnInfo && (
+        <ExportReturnModal
+          info={exportReturnInfo}
+          onClose={() => setExportReturnInfo(null)}
+        />
+      )}
 
       <ConfirmDialog
         isOpen={!!deleteId} onClose={() => setDeleteId(null)}
