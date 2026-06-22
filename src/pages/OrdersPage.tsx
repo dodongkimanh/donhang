@@ -1515,7 +1515,7 @@ function CreateOrderModal({
           </div>
 
           {/* ── Trạng thái (chỉ nhân viên chỉnh đơn nháp) ── */}
-          {isEmployee && editingOrder?.status === 'draft' && (
+          {isEmployee && (editingOrder?.status === 'draft' || editingOrder?.status === 'placed') && (
             <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
               <span className="text-sm text-gray-600 flex-shrink-0">Trạng thái đơn</span>
               <select
@@ -2783,14 +2783,14 @@ export function OrdersPage() {
 
       await supabase.from('order_items').update({ supplier_id: null, cost_price: null }).eq('order_id', order.id)
 
-      // 5. Đổi trạng thái đơn về Nháp
-      await supabase.from('orders').update({ status: 'draft' }).eq('id', order.id)
+      // 5. Đổi trạng thái đơn về Đặt Đơn (để kế toán/kho vẫn thấy đơn, sale sửa được)
+      await supabase.from('orders').update({ status: 'placed' }).eq('id', order.id)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-transactions'] })
-      toast.success('Đã hủy xuất kho. Đơn chuyển về Đơn Nháp để sale chỉnh sửa.')
+      toast.success('Đã hủy xuất kho. Đơn chuyển về Đặt Đơn để sale chỉnh sửa.')
       setRevertingOrder(null)
     },
     onError: () => toast.error('Có lỗi khi hủy xuất kho'),
@@ -3394,7 +3394,7 @@ export function OrdersPage() {
 
                       {/* Col 5: Trạng thái */}
                       <td className="px-4 py-3 border-r border-dashed border-gray-200">
-                        {canEdit || (isEmployee && order.status === 'draft') ? (
+                        {canEdit || (isEmployee && (order.status === 'draft' || order.status === 'placed')) ? (
                           <StatusSelect order={order} isAdmin={isAdmin} onUpdate={(id, s) => updateStatusMutation.mutate({ id, status: s })} />
                         ) : (
                           <StatusBadge status={order.status} block />
@@ -3481,7 +3481,7 @@ export function OrdersPage() {
         onConfirm={() => revertingOrder && revertExportMutation.mutate(revertingOrder)}
         loading={revertExportMutation.isPending}
         title="Hủy Xuất Kho?"
-        message={`Đơn ${revertingOrder?.order_number ?? ''} sẽ chuyển về Đơn Nháp. Phiếu xuất kho bị xóa, số lượng hàng hoàn trả về tồn kho. Sale có thể chỉnh sửa lại đơn. Tiếp tục?`}
+        message={`Đơn ${revertingOrder?.order_number ?? ''} sẽ chuyển về Đặt Đơn. Phiếu xuất kho bị xóa, số lượng hàng hoàn trả về tồn kho. Sale có thể chỉnh sửa lại đơn. Tiếp tục?`}
         confirmLabel="Hủy Xuất Kho & Hoàn Tồn Kho"
       />
 
