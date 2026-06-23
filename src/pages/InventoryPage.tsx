@@ -768,7 +768,8 @@ export function InventoryPage() {
             new_value: c.new_value,
             edited_by: profile.id,
           }))
-          await supabase.from('inventory_edit_history').insert(historyRows)
+          const { error: hErr } = await supabase.from('inventory_edit_history').insert(historyRows)
+          if (hErr) console.warn('Lưu lịch sử lỗi:', hErr.message)
         }
 
         // Cập nhật tồn kho khi SL thay đổi
@@ -785,20 +786,23 @@ export function InventoryPage() {
               tx.type === 'import'
                 ? Math.max(0, ps.quantity + delta)
                 : Math.max(0, ps.quantity - delta)
-            await supabase.from('product_suppliers').update({ quantity: adjQty }).eq('id', ps.id)
+            const { error: sErr } = await supabase.from('product_suppliers').update({ quantity: adjQty }).eq('id', ps.id)
+            if (sErr) throw new Error(`Lỗi cập nhật tồn kho: ${sErr.message}`)
           }
         }
         // Cập nhật giá nhập NCC
         if (tx.type === 'import' && tx.supplier_id && newPrice !== tx.unit_price) {
-          await supabase
+          const { error: cpErr } = await supabase
             .from('product_suppliers')
             .update({ cost_price: newPrice })
             .eq('product_id', tx.product_id)
             .eq('supplier_id', tx.supplier_id)
+          if (cpErr) throw new Error(`Lỗi cập nhật giá NCC: ${cpErr.message}`)
         }
-        await supabase.from('inventory_transactions')
+        const { error: txErr } = await supabase.from('inventory_transactions')
           .update({ quantity: newQty, unit_price: newPrice, note: newNote })
           .eq('id', tx.id)
+        if (txErr) throw new Error(`Lỗi cập nhật phiếu: ${txErr.message}`)
       }
     },
     onSuccess: async () => {
