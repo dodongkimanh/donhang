@@ -722,18 +722,20 @@ export function InventoryPage() {
         (t) => t.type !== 'adjustment' && getTxGroupKey(t) === batchKey,
       )
       const isMulti = batchTxs.length > 1
+      const newNote = note || null
+      const oldNote = batchTxs[0]?.note || null
+      let noteRecorded = false
+
       for (const ei of items) {
         const tx = batchTxs.find((t) => t.id === ei.id)
         if (!tx) continue
-        const newQty = !isMulti ? (parseInt(ei.quantity) || tx.quantity) : tx.quantity
+        const newQty = parseInt(ei.quantity) || tx.quantity
         const newPrice = parseFloat(ei.unit_price) || tx.unit_price
-        const newNote = note || null
-        const oldNote = tx.note || null
+        const productName = tx.product?.name ?? ''
+        const label = isMulti ? ` (${productName})` : ''
 
         // Ghi lịch sử thay đổi
         const changes: Array<{ field_name: string; old_value: string; new_value: string }> = []
-        const productName = tx.product?.name ?? ''
-        const label = isMulti ? ` (${productName})` : ''
 
         if (newQty !== tx.quantity) {
           changes.push({
@@ -749,12 +751,13 @@ export function InventoryPage() {
             new_value: newPrice.toString(),
           })
         }
-        if (newNote !== oldNote) {
+        if (!noteRecorded && newNote !== oldNote) {
           changes.push({
             field_name: 'Ghi chú',
             old_value: oldNote ?? '',
             new_value: newNote ?? '',
           })
+          noteRecorded = true
         }
 
         if (changes.length > 0) {
@@ -768,9 +771,9 @@ export function InventoryPage() {
           await supabase.from('inventory_edit_history').insert(historyRows)
         }
 
-        // Cập nhật tồn kho
+        // Cập nhật tồn kho khi SL thay đổi
         const delta = newQty - tx.quantity
-        if (!isMulti && delta !== 0 && tx.supplier_id) {
+        if (delta !== 0 && tx.supplier_id) {
           const { data: psList } = await supabase
             .from('product_suppliers')
             .select('id, quantity')
@@ -785,6 +788,7 @@ export function InventoryPage() {
             await supabase.from('product_suppliers').update({ quantity: adjQty }).eq('id', ps.id)
           }
         }
+        // Cập nhật giá nhập NCC
         if (tx.type === 'import' && tx.supplier_id && newPrice !== tx.unit_price) {
           await supabase
             .from('product_suppliers')
@@ -797,11 +801,13 @@ export function InventoryPage() {
           .eq('id', tx.id)
       }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory-transactions'] })
-      queryClient.invalidateQueries({ queryKey: ['products'] })
-      queryClient.invalidateQueries({ queryKey: ['products-simple'] })
-      queryClient.invalidateQueries({ queryKey: ['inventory-edit-history'] })
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ['inventory-transactions'] }),
+        queryClient.refetchQueries({ queryKey: ['products'] }),
+        queryClient.refetchQueries({ queryKey: ['products-simple'] }),
+        queryClient.refetchQueries({ queryKey: ['inventory-edit-history'] }),
+      ])
       toast.success('Đã cập nhật phiếu thành công')
       setEditBatchKey(null)
     },
@@ -901,6 +907,16 @@ export function InventoryPage() {
     const dirty = !!form.product_id || !!form.quantity || !!form.unit_price || !!form.note || exportItems.length > 0
     if (dirty) setConfirmCloseOpen(true)
     else closeTransactionModal()
+  }
+
+  function getVoucherCode(first: InventoryTransaction): string {
+    const d = new Date(first.created_at)
+    const prefix = first.type === 'import' ? 'NK' : first.type === 'export' ? 'XK' : 'CB'
+    const yy = String(d.getFullYear()).slice(-2)
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    const shortId = (first.batch_id ?? first.id).slice(0, 4).toUpperCase()
+    return `${prefix}${yy}${mm}${dd}-${shortId}`
   }
 
   function displayNote(note: string | null | undefined): { text: string; cancelReason: string | null } {
@@ -1161,6 +1177,7 @@ export function InventoryPage() {
                     : null
 
                   const noteInfo = displayNote(first.note)
+                  const voucherCode = getVoucherCode(first)
 
                   return (
                     <Fragment key={key}>
@@ -1179,6 +1196,7 @@ export function InventoryPage() {
                               <ArrowUpCircle size={15} /> Xuất
                             </span>
                           )}
+                          <span className="block text-[10px] text-gray-400 font-mono mt-0.5">{voucherCode}</span>
                           {cancelled && (
                             <span className="flex items-center gap-0.5 text-[11px] text-red-500 font-medium mt-0.5">
                               <Ban size={10} /> Đã hủy
@@ -1359,6 +1377,7 @@ export function InventoryPage() {
                 <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
                   <Pencil size={17} className="text-blue-500" />
                   Sửa Phiếu {editFirst.type === 'import' ? 'Nhập' : 'Xuất'} Kho
+                  <span className="text-xs font-mono text-gray-400 bg-gray-100 px-2 py-0.5 rounded">{getVoucherCode(editFirst)}</span>
                 </h2>
                 <button onClick={() => setEditBatchKey(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
                   <X size={18} />
@@ -1402,14 +1421,14 @@ export function InventoryPage() {
                   </>
                 )}
 
-                {/* Multi-product: editable unit_price per item */}
+                {/* Multi-product: editable quantity + unit_price per item */}
                 {isMulti && (
                   <div className="border border-gray-200 rounded-xl overflow-hidden">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 border-b">
                         <tr>
                           <th className="text-left px-4 py-2.5 font-semibold text-gray-600 text-xs uppercase">Sản Phẩm / NCC</th>
-                          <th className="text-right px-4 py-2.5 font-semibold text-gray-600 text-xs uppercase w-16">SL</th>
+                          <th className="text-right px-4 py-2.5 font-semibold text-gray-600 text-xs uppercase w-20">SL</th>
                           <th className="text-right px-4 py-2.5 font-semibold text-gray-600 text-xs uppercase w-36">Đơn Giá</th>
                         </tr>
                       </thead>
@@ -1420,7 +1439,14 @@ export function InventoryPage() {
                               <p className="font-medium text-gray-900">{ei.product_name}</p>
                               <p className="text-xs text-gray-400">{ei.supplier_name}</p>
                             </td>
-                            <td className="px-4 py-2.5 text-right text-gray-600">{parseInt(ei.quantity).toLocaleString('vi-VN')}</td>
+                            <td className="px-4 py-2.5">
+                              <input
+                                type="text" inputMode="numeric"
+                                value={fmtThousands(ei.quantity)}
+                                onChange={(e) => setEditItems((prev) => prev.map((it, i) => i === idx ? { ...it, quantity: e.target.value.replace(/\D/g, '') } : it))}
+                                className="w-full text-center px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-blue-500 outline-none"
+                              />
+                            </td>
                             <td className="px-4 py-2.5">
                               <input
                                 type="text" inputMode="numeric"
@@ -1520,6 +1546,7 @@ export function InventoryPage() {
                 <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
                   <History size={17} className="text-orange-500" />
                   Lịch Sử Chỉnh Sửa Phiếu
+                  <span className="text-xs font-mono text-gray-400 bg-gray-100 px-2 py-0.5 rounded">{getVoucherCode(histFirst)}</span>
                 </h2>
                 <button onClick={() => setHistoryBatchKey(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
                   <X size={18} />
