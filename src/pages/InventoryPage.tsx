@@ -99,7 +99,10 @@ export function InventoryPage() {
   const [editNote, setEditNote] = useState('')
   const [editItems, setEditItems] = useState<Array<{ id: string; quantity: string; unit_price: string; product_name: string; supplier_name: string }>>([])
   const [cancelConfirmKey, setCancelConfirmKey] = useState<string | null>(null)
+  const [cancelReason, setCancelReason] = useState('')
   const [deleteConfirmKey, setDeleteConfirmKey] = useState<string | null>(null)
+  const [adjCancelReason, setAdjCancelReason] = useState('')
+  const [adjCancelConfirm, setAdjCancelConfirm] = useState(false)
   const printAfterSaveRef = useRef(false)
 
   // Export multi-product state
@@ -270,9 +273,10 @@ export function InventoryPage() {
 
   // Cancel adjustment voucher: revert stock + mark as cancelled in note
   const cancelAdjMutation = useMutation({
-    mutationFn: async (batchKey: string) => {
+    mutationFn: async ({ batchKey, reason }: { batchKey: string; reason: string }) => {
       const rows = transactions.filter((t) => t.type === 'adjustment' && batchKeyOf(t) === batchKey)
       if (rows.some((r) => r.note?.includes('[ĐÃ HỦY]'))) throw new Error('Phiếu này đã được hủy')
+      const cancelNote = reason.trim() ? ` | Lý do hủy: ${reason.trim()} | [ĐÃ HỦY]` : ' | [ĐÃ HỦY]'
       for (const row of rows) {
         const truoc = parseTruoc(row.note)
         if (truoc !== null && row.supplier_id && row.product_id) {
@@ -289,7 +293,7 @@ export function InventoryPage() {
           }
         }
         await supabase.from('inventory_transactions')
-          .update({ note: (row.note ?? '') + ' | [ĐÃ HỦY]' })
+          .update({ note: (row.note ?? '') + cancelNote })
           .eq('id', row.id)
       }
     },
@@ -299,6 +303,8 @@ export function InventoryPage() {
       queryClient.invalidateQueries({ queryKey: ['products-simple'] })
       toast.success('Đã hủy phiếu cân bằng và hoàn nguyên tồn kho')
       setAdjBatchKey(null)
+      setAdjCancelReason('')
+      setAdjCancelConfirm(false)
     },
     onError: (e: Error) => toast.error(e.message || 'Có lỗi khi hủy phiếu'),
   })
@@ -564,12 +570,13 @@ export function InventoryPage() {
 
   // ── Cancel import/export batch: reverse stock + mark note ────────────────────
   const cancelBatchMutation = useMutation({
-    mutationFn: async (batchKey: string) => {
+    mutationFn: async ({ batchKey, reason }: { batchKey: string; reason: string }) => {
       const batchTxs = transactions.filter(
         (t) => t.type !== 'adjustment' && getTxGroupKey(t) === batchKey,
       )
       if (batchTxs.length === 0) throw new Error('Không tìm thấy phiếu')
       if (batchTxs.some((t) => t.note?.includes('[ĐÃ HỦY]'))) throw new Error('Phiếu này đã được hủy')
+      const cancelNote = reason.trim() ? ` | Lý do hủy: ${reason.trim()} | [ĐÃ HỦY]` : ' | [ĐÃ HỦY]'
       for (const tx of batchTxs) {
         if (tx.supplier_id) {
           const { data: psList } = await supabase
@@ -587,7 +594,7 @@ export function InventoryPage() {
           }
         }
         await supabase.from('inventory_transactions')
-          .update({ note: (tx.note ?? '') + ' | [ĐÃ HỦY]' })
+          .update({ note: (tx.note ?? '') + cancelNote })
           .eq('id', tx.id)
       }
     },
@@ -597,6 +604,7 @@ export function InventoryPage() {
       queryClient.invalidateQueries({ queryKey: ['products-simple'] })
       toast.success('Đã hủy phiếu và hoàn nguyên tồn kho')
       setCancelConfirmKey(null)
+      setCancelReason('')
     },
     onError: (e: Error) => toast.error(e.message || 'Có lỗi khi hủy phiếu'),
   })
@@ -1524,19 +1532,45 @@ export function InventoryPage() {
             {/* Footer */}
             <div className="px-5 py-4 border-t bg-gray-50 flex items-center justify-between flex-shrink-0">
               <div className="flex gap-2">
-                {!adjCancelled && (
+                {!adjCancelled && !adjCancelConfirm && (
                   <button
-                    onClick={() => {
-                      if (window.confirm('Hủy phiếu sẽ hoàn nguyên tồn kho về giá trị trước khi cân bằng. Tiếp tục?')) {
-                        cancelAdjMutation.mutate(adjBatchKey!)
-                      }
-                    }}
-                    disabled={cancelAdjMutation.isPending}
-                    className="flex items-center gap-1.5 px-3 py-2 text-orange-600 hover:bg-orange-50 border border-orange-300 rounded-lg text-sm font-medium disabled:opacity-50 transition-colors"
+                    onClick={() => { setAdjCancelReason(''); setAdjCancelConfirm(true) }}
+                    className="flex items-center gap-1.5 px-3 py-2 text-orange-600 hover:bg-orange-50 border border-orange-300 rounded-lg text-sm font-medium transition-colors"
                   >
                     <Ban size={14} />
-                    {cancelAdjMutation.isPending ? 'Đang hủy...' : 'Hủy Phiếu'}
+                    Hủy Phiếu
                   </button>
+                )}
+                {adjCancelConfirm && (
+                  <div className="flex-1 space-y-2">
+                    <textarea
+                      value={adjCancelReason}
+                      onChange={(e) => setAdjCancelReason(e.target.value)}
+                      rows={2}
+                      className="w-full px-3 py-2 border border-orange-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 outline-none resize-none"
+                      placeholder="Nhập lý do hủy phiếu... (bắt buộc)"
+                      autoFocus
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { setAdjCancelConfirm(false); setAdjCancelReason('') }}
+                        className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-100"
+                      >
+                        Không
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (!adjCancelReason.trim()) { toast.error('Vui lòng nhập lý do hủy phiếu'); return }
+                          cancelAdjMutation.mutate({ batchKey: adjBatchKey!, reason: adjCancelReason })
+                        }}
+                        disabled={cancelAdjMutation.isPending || !adjCancelReason.trim()}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg text-sm font-medium transition-colors"
+                      >
+                        <Ban size={14} />
+                        {cancelAdjMutation.isPending ? 'Đang hủy...' : 'Xác Nhận Hủy'}
+                      </button>
+                    </div>
+                  </div>
                 )}
                 {profile?.role === 'admin' && (
                   <button
@@ -1896,14 +1930,42 @@ export function InventoryPage() {
         confirmLabel="Thoát"
       />
 
-      <ConfirmDialog
-        isOpen={cancelConfirmKey !== null}
-        onClose={() => setCancelConfirmKey(null)}
-        onConfirm={() => { if (cancelConfirmKey) cancelBatchMutation.mutate(cancelConfirmKey) }}
-        title="Hủy phiếu?"
-        message="Phiếu sẽ bị hủy và tồn kho sẽ được hoàn nguyên về trước khi có giao dịch này. Hành động này không thể khôi phục."
-        confirmLabel={cancelBatchMutation.isPending ? 'Đang hủy...' : 'Hủy Phiếu'}
-      />
+      {cancelConfirmKey !== null && (
+        <Modal isOpen onClose={() => { setCancelConfirmKey(null); setCancelReason('') }} title="Hủy phiếu?" size="sm">
+          <p className="text-gray-600 mb-3">Phiếu sẽ bị hủy và tồn kho sẽ được hoàn nguyên về trước khi có giao dịch này. Hành động này không thể khôi phục.</p>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Lý do hủy <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 outline-none resize-none"
+              placeholder="Nhập lý do hủy phiếu..."
+              autoFocus
+            />
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button
+              onClick={() => { setCancelConfirmKey(null); setCancelReason('') }}
+              className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+            >
+              Hủy
+            </button>
+            <button
+              onClick={() => {
+                if (!cancelReason.trim()) { toast.error('Vui lòng nhập lý do hủy phiếu'); return }
+                cancelBatchMutation.mutate({ batchKey: cancelConfirmKey, reason: cancelReason })
+              }}
+              disabled={cancelBatchMutation.isPending || !cancelReason.trim()}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              {cancelBatchMutation.isPending ? 'Đang hủy...' : 'Hủy Phiếu'}
+            </button>
+          </div>
+        </Modal>
+      )}
 
       <ConfirmDialog
         isOpen={deleteConfirmKey !== null}
