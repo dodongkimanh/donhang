@@ -276,7 +276,6 @@ export function InventoryPage() {
     mutationFn: async ({ batchKey, reason }: { batchKey: string; reason: string }) => {
       const rows = transactions.filter((t) => t.type === 'adjustment' && batchKeyOf(t) === batchKey)
       if (rows.some((r) => r.note?.includes('[ĐÃ HỦY]'))) throw new Error('Phiếu này đã được hủy')
-      const cancelNote = reason.trim() ? ` | Lý do hủy: ${reason.trim()} | [ĐÃ HỦY]` : ' | [ĐÃ HỦY]'
       for (const row of rows) {
         const truoc = parseTruoc(row.note)
         if (truoc !== null && row.supplier_id && row.product_id) {
@@ -292,9 +291,14 @@ export function InventoryPage() {
               .eq('id', (psList[0] as { id: string }).id)
           }
         }
-        await supabase.from('inventory_transactions')
-          .update({ note: (row.note ?? '') + cancelNote })
+        const existingNote = row.note?.replace(/\s*\|\s*$/, '').trim() || ''
+        const reasonPart = reason.trim() ? `Lý do hủy: ${reason.trim()}` : ''
+        const parts = [existingNote, reasonPart, '[ĐÃ HỦY]'].filter(Boolean)
+        const newNote = parts.join(' | ')
+        const { error } = await supabase.from('inventory_transactions')
+          .update({ note: newNote })
           .eq('id', row.id)
+        if (error) throw error
       }
     },
     onSuccess: () => {
@@ -576,7 +580,6 @@ export function InventoryPage() {
       )
       if (batchTxs.length === 0) throw new Error('Không tìm thấy phiếu')
       if (batchTxs.some((t) => t.note?.includes('[ĐÃ HỦY]'))) throw new Error('Phiếu này đã được hủy')
-      const cancelNote = reason.trim() ? ` | Lý do hủy: ${reason.trim()} | [ĐÃ HỦY]` : ' | [ĐÃ HỦY]'
       for (const tx of batchTxs) {
         if (tx.supplier_id) {
           const { data: psList } = await supabase
@@ -593,9 +596,14 @@ export function InventoryPage() {
             await supabase.from('product_suppliers').update({ quantity: newQty }).eq('id', ps.id)
           }
         }
-        await supabase.from('inventory_transactions')
-          .update({ note: (tx.note ?? '') + cancelNote })
+        const existingNote = tx.note?.replace(/\s*\|\s*$/, '').trim() || ''
+        const reasonPart = reason.trim() ? `Lý do hủy: ${reason.trim()}` : ''
+        const parts = [existingNote, reasonPart, '[ĐÃ HỦY]'].filter(Boolean)
+        const newNote = parts.join(' | ')
+        const { error } = await supabase.from('inventory_transactions')
+          .update({ note: newNote })
           .eq('id', tx.id)
+        if (error) throw error
       }
     },
     onSuccess: () => {
@@ -806,6 +814,18 @@ export function InventoryPage() {
     const dirty = !!form.product_id || !!form.quantity || !!form.unit_price || !!form.note || exportItems.length > 0
     if (dirty) setConfirmCloseOpen(true)
     else closeTransactionModal()
+  }
+
+  function displayNote(note: string | null | undefined): { text: string; cancelReason: string | null } {
+    if (!note) return { text: '', cancelReason: null }
+    const cancelMatch = note.match(/Lý do hủy:\s*(.+?)\s*\|\s*\[ĐÃ HỦY\]/)
+    const cancelReason = cancelMatch ? cancelMatch[1].trim() : null
+    const cleanNote = note
+      .replace(/\s*\|\s*Lý do hủy:.*?\|\s*\[ĐÃ HỦY\]/, '')
+      .replace(/\s*\|\s*\[ĐÃ HỦY\]/, '')
+      .replace(/\s*\[ĐÃ HỦY\]/, '')
+      .trim()
+    return { text: cleanNote, cancelReason }
   }
 
   // Build grouped display items: adjustments stay per-row; import/export group by batch
@@ -1053,11 +1073,13 @@ export function InventoryPage() {
                     ? txs.find((t) => t.supplier_id === supplierIds[0])?.supplier
                     : null
 
+                  const noteInfo = displayNote(first.note)
+
                   return (
                     <Fragment key={key}>
                       {/* Voucher summary row */}
                       <tr
-                        className={`hover:bg-gray-50 cursor-pointer transition-colors ${isExpanded ? 'bg-blue-50/30' : ''} ${cancelled ? 'opacity-60' : ''}`}
+                        className={`hover:bg-gray-50 cursor-pointer transition-colors ${isExpanded ? 'bg-blue-50/30' : ''} ${cancelled ? 'bg-red-50 border-l-4 border-l-red-400' : ''}`}
                         onClick={() => toggleBatch(key)}
                       >
                         <td className="px-4 py-3">
@@ -1111,7 +1133,14 @@ export function InventoryPage() {
                             </div>
                           ) : formatCurrency(first.unit_price)}
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-500 whitespace-normal break-words">{first.note ?? '–'}</td>
+                        <td className="px-4 py-3 text-sm whitespace-normal break-words">
+                          {noteInfo.text ? <span className="text-gray-500">{noteInfo.text}</span> : <span className="text-gray-400">–</span>}
+                          {noteInfo.cancelReason && (
+                            <div className="mt-1 text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1 no-underline" style={{ textDecoration: 'none' }}>
+                              <strong>Lý do hủy:</strong> {noteInfo.cancelReason}
+                            </div>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-sm text-gray-500">{first.profile?.full_name ?? '–'}</td>
                         <td className="px-4 py-3 text-sm text-gray-400 whitespace-nowrap">{formatDate(first.created_at)}</td>
                         <td className="px-4 py-3">
