@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, ArrowDownCircle, ArrowUpCircle, Truck, List, Printer, SlidersHorizontal, X, TrendingUp, TrendingDown, Minus, Trash2, Calendar, ChevronDown, ScanLine, UserCheck, RotateCcw, Pencil, Ban } from 'lucide-react'
+import { Plus, ArrowDownCircle, ArrowUpCircle, Truck, List, Printer, SlidersHorizontal, X, TrendingUp, TrendingDown, Minus, Trash2, Calendar, ChevronDown, ScanLine, UserCheck, RotateCcw, Pencil, Ban, History } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Modal } from '@/components/ui/Modal'
@@ -10,7 +10,7 @@ import { PrintLabelModal, PrintBatchLabelModal, type BatchPrintItem } from '@/co
 import { StockAdjustmentPage } from '@/components/ui/StockAdjustmentPage'
 import { StockCheckPage, type CheckResult } from '@/components/ui/StockCheckPage'
 import { formatCurrency, formatDate, generateBarcode, fmtThousands } from '@/utils/format'
-import type { InventoryTransaction, Product, Supplier, ProductSupplier } from '@/types'
+import type { InventoryTransaction, InventoryEditHistory, Product, Supplier, ProductSupplier } from '@/types'
 import toast from 'react-hot-toast'
 
 interface TransactionForm {
@@ -103,6 +103,7 @@ export function InventoryPage() {
   const [deleteConfirmKey, setDeleteConfirmKey] = useState<string | null>(null)
   const [adjCancelReason, setAdjCancelReason] = useState('')
   const [adjCancelConfirm, setAdjCancelConfirm] = useState(false)
+  const [historyBatchKey, setHistoryBatchKey] = useState<string | null>(null)
   const printAfterSaveRef = useRef(false)
 
   // Export multi-product state
@@ -193,6 +194,48 @@ export function InventoryPage() {
       return data as Product | null
     },
     enabled: !!printProductId,
+  })
+
+  // Edit history for a batch
+  const historyTxIds = historyBatchKey
+    ? transactions
+        .filter((t) => t.type !== 'adjustment' && getTxGroupKey(t) === historyBatchKey)
+        .map((t) => t.id)
+    : []
+  const { data: editHistory = [], isLoading: historyLoading } = useQuery({
+    queryKey: ['inventory-edit-history', historyTxIds],
+    queryFn: async () => {
+      if (historyTxIds.length === 0) return []
+      const { data, error } = await supabase
+        .from('inventory_edit_history')
+        .select('*, profile:profiles(full_name)')
+        .in('transaction_id', historyTxIds)
+        .order('edited_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as InventoryEditHistory[]
+    },
+    enabled: historyTxIds.length > 0,
+  })
+
+  // Also load history when editing a batch
+  const editTxIds = editBatchKey
+    ? transactions
+        .filter((t) => t.type !== 'adjustment' && getTxGroupKey(t) === editBatchKey)
+        .map((t) => t.id)
+    : []
+  const { data: editModalHistory = [] } = useQuery({
+    queryKey: ['inventory-edit-history', editTxIds],
+    queryFn: async () => {
+      if (editTxIds.length === 0) return []
+      const { data, error } = await supabase
+        .from('inventory_edit_history')
+        .select('*, profile:profiles(full_name)')
+        .in('transaction_id', editTxIds)
+        .order('edited_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as InventoryEditHistory[]
+    },
+    enabled: editTxIds.length > 0,
   })
 
   // ── Voucher grouping ──
@@ -674,6 +717,7 @@ export function InventoryPage() {
       note: string
       items: typeof editItems
     }) => {
+      if (!profile) throw new Error('Chưa đăng nhập')
       const batchTxs = transactions.filter(
         (t) => t.type !== 'adjustment' && getTxGroupKey(t) === batchKey,
       )
@@ -683,6 +727,48 @@ export function InventoryPage() {
         if (!tx) continue
         const newQty = !isMulti ? (parseInt(ei.quantity) || tx.quantity) : tx.quantity
         const newPrice = parseFloat(ei.unit_price) || tx.unit_price
+        const newNote = note || null
+        const oldNote = tx.note || null
+
+        // Ghi lịch sử thay đổi
+        const changes: Array<{ field_name: string; old_value: string; new_value: string }> = []
+        const productName = tx.product?.name ?? ''
+        const label = isMulti ? ` (${productName})` : ''
+
+        if (newQty !== tx.quantity) {
+          changes.push({
+            field_name: `Số lượng${label}`,
+            old_value: tx.quantity.toString(),
+            new_value: newQty.toString(),
+          })
+        }
+        if (newPrice !== tx.unit_price) {
+          changes.push({
+            field_name: `Đơn giá${label}`,
+            old_value: tx.unit_price.toString(),
+            new_value: newPrice.toString(),
+          })
+        }
+        if (newNote !== oldNote) {
+          changes.push({
+            field_name: 'Ghi chú',
+            old_value: oldNote ?? '',
+            new_value: newNote ?? '',
+          })
+        }
+
+        if (changes.length > 0) {
+          const historyRows = changes.map((c) => ({
+            transaction_id: tx.id,
+            field_name: c.field_name,
+            old_value: c.old_value,
+            new_value: c.new_value,
+            edited_by: profile.id,
+          }))
+          await supabase.from('inventory_edit_history').insert(historyRows)
+        }
+
+        // Cập nhật tồn kho
         const delta = newQty - tx.quantity
         if (!isMulti && delta !== 0 && tx.supplier_id) {
           const { data: psList } = await supabase
@@ -707,7 +793,7 @@ export function InventoryPage() {
             .eq('supplier_id', tx.supplier_id)
         }
         await supabase.from('inventory_transactions')
-          .update({ quantity: newQty, unit_price: newPrice, note: note || null })
+          .update({ quantity: newQty, unit_price: newPrice, note: newNote })
           .eq('id', tx.id)
       }
     },
@@ -715,6 +801,7 @@ export function InventoryPage() {
       queryClient.invalidateQueries({ queryKey: ['inventory-transactions'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['products-simple'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-edit-history'] })
       toast.success('Đã cập nhật phiếu thành công')
       setEditBatchKey(null)
     },
@@ -1187,6 +1274,13 @@ export function InventoryPage() {
                                 </button>
                               </>
                             )}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setHistoryBatchKey(key) }}
+                              title="Lịch sử sửa phiếu"
+                              className="p-1.5 text-gray-400 hover:text-orange-500 hover:bg-orange-50 rounded-lg transition-colors"
+                            >
+                              <History size={14} />
+                            </button>
                             {profile?.role === 'admin' && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); setDeleteConfirmKey(key) }}
@@ -1352,6 +1446,44 @@ export function InventoryPage() {
                     placeholder="Ghi chú..."
                   />
                 </div>
+
+                {/* Lịch sử sửa phiếu */}
+                {editModalHistory.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1.5">
+                      <History size={14} className="text-orange-500" />
+                      Lịch sử chỉnh sửa ({editModalHistory.length})
+                    </p>
+                    <div className="border border-orange-200 rounded-xl overflow-hidden bg-orange-50/30 max-h-48 overflow-y-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-orange-50 border-b border-orange-200 sticky top-0">
+                          <tr>
+                            <th className="text-left px-3 py-2 font-semibold text-orange-700">Thay đổi</th>
+                            <th className="text-right px-3 py-2 font-semibold text-orange-700">Trước</th>
+                            <th className="text-right px-3 py-2 font-semibold text-orange-700">Sau</th>
+                            <th className="text-left px-3 py-2 font-semibold text-orange-700">Người sửa</th>
+                            <th className="text-left px-3 py-2 font-semibold text-orange-700">Thời gian</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-orange-100">
+                          {editModalHistory.map((h) => (
+                            <tr key={h.id} className="hover:bg-orange-50">
+                              <td className="px-3 py-2 font-medium text-gray-800">{h.field_name}</td>
+                              <td className="px-3 py-2 text-right text-red-600">
+                                {h.field_name.startsWith('Đơn giá') ? formatCurrency(parseFloat(h.old_value ?? '0')) : h.old_value || '–'}
+                              </td>
+                              <td className="px-3 py-2 text-right text-green-600 font-medium">
+                                {h.field_name.startsWith('Đơn giá') ? formatCurrency(parseFloat(h.new_value ?? '0')) : h.new_value || '–'}
+                              </td>
+                              <td className="px-3 py-2 text-gray-500">{h.profile?.full_name ?? '–'}</td>
+                              <td className="px-3 py-2 text-gray-400 whitespace-nowrap">{formatDate(h.edited_at)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="px-5 py-4 border-t bg-gray-50 flex justify-end gap-2 flex-shrink-0">
@@ -1366,6 +1498,93 @@ export function InventoryPage() {
                 >
                   <Pencil size={14} />
                   {editBatchMutation.isPending ? 'Đang lưu...' : 'Lưu Thay Đổi'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── History Modal ── */}
+      {historyBatchKey !== null && (() => {
+        const batchTxs = transactions.filter(
+          (t) => t.type !== 'adjustment' && getTxGroupKey(t) === historyBatchKey,
+        )
+        const histFirst = batchTxs[0]
+        if (!histFirst) return null
+        return (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div className="absolute inset-0 bg-black/50" onClick={() => setHistoryBatchKey(null)} />
+            <div className="relative bg-white w-full max-w-2xl rounded-t-2xl sm:rounded-xl shadow-2xl max-h-[90vh] flex flex-col">
+              <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0">
+                <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                  <History size={17} className="text-orange-500" />
+                  Lịch Sử Chỉnh Sửa Phiếu
+                </h2>
+                <button onClick={() => setHistoryBatchKey(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="px-5 py-3 bg-gray-50 border-b flex flex-wrap gap-4 text-sm text-gray-600 flex-shrink-0">
+                <span>Loại: <strong className="text-gray-900">{histFirst.type === 'import' ? 'Nhập kho' : 'Xuất kho'}</strong></span>
+                <span>Ngày tạo: <strong className="text-gray-900">{formatDate(histFirst.created_at)}</strong></span>
+                <span>Người tạo: <strong className="text-gray-900">{histFirst.profile?.full_name ?? '–'}</strong></span>
+              </div>
+
+              <div className="overflow-y-auto flex-1">
+                {historyLoading ? (
+                  <div className="flex justify-center py-12">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500" />
+                  </div>
+                ) : editHistory.length === 0 ? (
+                  <div className="text-center py-12 text-gray-400">
+                    <History size={32} className="mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">Phiếu này chưa được chỉnh sửa lần nào</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-white border-b border-gray-200">
+                      <tr>
+                        <th className="text-left font-semibold text-gray-500 text-xs uppercase tracking-wide px-5 py-2.5">Trường</th>
+                        <th className="text-right font-semibold text-gray-500 text-xs uppercase tracking-wide px-4 py-2.5">Giá trị cũ</th>
+                        <th className="text-right font-semibold text-gray-500 text-xs uppercase tracking-wide px-4 py-2.5">Giá trị mới</th>
+                        <th className="text-left font-semibold text-gray-500 text-xs uppercase tracking-wide px-4 py-2.5">Người sửa</th>
+                        <th className="text-left font-semibold text-gray-500 text-xs uppercase tracking-wide px-4 py-2.5">Thời gian</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {editHistory.map((h) => {
+                        const isPrice = h.field_name.startsWith('Đơn giá')
+                        return (
+                          <tr key={h.id} className="hover:bg-gray-50">
+                            <td className="px-5 py-3 font-medium text-gray-800">{h.field_name}</td>
+                            <td className="px-4 py-3 text-right">
+                              <span className="inline-flex items-center gap-1 text-red-600 bg-red-50 px-2 py-0.5 rounded text-xs font-medium">
+                                {isPrice ? formatCurrency(parseFloat(h.old_value ?? '0')) : (h.old_value || '–')}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <span className="inline-flex items-center gap-1 text-green-600 bg-green-50 px-2 py-0.5 rounded text-xs font-medium">
+                                {isPrice ? formatCurrency(parseFloat(h.new_value ?? '0')) : (h.new_value || '–')}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-gray-600">{h.profile?.full_name ?? '–'}</td>
+                            <td className="px-4 py-3 text-gray-400 whitespace-nowrap">{formatDate(h.edited_at)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div className="px-5 py-4 border-t bg-gray-50 flex justify-end flex-shrink-0">
+                <button
+                  onClick={() => setHistoryBatchKey(null)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-100 transition-colors"
+                >
+                  Đóng
                 </button>
               </div>
             </div>

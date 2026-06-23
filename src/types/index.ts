@@ -86,6 +86,17 @@ export interface InventoryTransaction {
   supplier?: Supplier
 }
 
+export interface InventoryEditHistory {
+  id: string
+  transaction_id: string
+  field_name: string
+  old_value: string | null
+  new_value: string | null
+  edited_by: string | null
+  edited_at: string
+  profile?: Profile
+}
+
 export interface SupplierPayment {
   id: string
   supplier_id: string
