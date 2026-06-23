@@ -799,10 +799,12 @@ export function InventoryPage() {
             .eq('supplier_id', tx.supplier_id)
           if (cpErr) throw new Error(`Lỗi cập nhật giá NCC: ${cpErr.message}`)
         }
-        const { error: txErr } = await supabase.from('inventory_transactions')
+        const { data: updated, error: txErr } = await supabase.from('inventory_transactions')
           .update({ quantity: newQty, unit_price: newPrice, note: newNote })
           .eq('id', tx.id)
+          .select('id, quantity, unit_price')
         if (txErr) throw new Error(`Lỗi cập nhật phiếu: ${txErr.message}`)
+        if (!updated || updated.length === 0) throw new Error('Không thể cập nhật phiếu — kiểm tra quyền RLS trên bảng inventory_transactions')
       }
     },
     onSuccess: async () => {
