@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Pencil, Trash2, Tag, ImageIcon, Package, Search, X, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
+import { Plus, Pencil, Trash2, Tag, ImageIcon, Package, Search, X, ChevronDown, ChevronUp, RefreshCw, Eye, EyeOff } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { ImageUpload } from '@/components/ui/ImageUpload'
-import { formatDate, generateBundleCode } from '@/utils/format'
+import { formatDate, formatCurrency, generateBundleCode } from '@/utils/format'
 import type { Category, ProductBundle, BundleItem, Product } from '@/types'
 import toast from 'react-hot-toast'
 
@@ -249,7 +249,7 @@ interface BundleForm {
 const defaultBundleForm: BundleForm = { name: '', bundle_code: '', description: '', image_url: null, items: [] }
 
 function BundlesTab() {
-  const { canEdit } = useAuth()
+  const { canEdit, isAdmin } = useAuth()
   const queryClient = useQueryClient()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingBundle, setEditingBundle] = useState<ProductBundle | null>(null)
@@ -258,13 +258,14 @@ function BundlesTab() {
   const [form, setForm] = useState<BundleForm>(defaultBundleForm)
   const [productSearch, setProductSearch] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [showCostPrice, setShowCostPrice] = useState(false)
 
   const { data: bundles = [], isLoading } = useQuery({
     queryKey: ['product-bundles'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('product_bundles')
-        .select('*, items:bundle_items(*, product:products(id, name, product_code, sale_price, unit, quantity, image_url))')
+        .select('*, items:bundle_items(*, product:products(id, name, product_code, sale_price, cost_price, unit, quantity, image_url))')
         .order('name')
       if (error) throw error
       return (data ?? []) as ProductBundle[]
@@ -449,6 +450,20 @@ function BundlesTab() {
                   <th className="text-left text-sm font-medium text-gray-500 px-3 py-3 w-20">Mã Bộ</th>
                   <th className="text-left text-sm font-medium text-gray-500 px-3 py-3 min-w-[160px]">Tên Bộ Sản Phẩm</th>
                   <th className="text-center text-sm font-medium text-gray-500 px-3 py-3 w-16">Số Món</th>
+                  {isAdmin && (
+                    <th className="text-right text-sm font-medium text-gray-500 px-3 py-3 w-36">
+                      <div className="flex items-center justify-end gap-1.5">
+                        Tổng Giá Nhập
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setShowCostPrice(!showCostPrice) }}
+                          className="p-0.5 hover:bg-gray-200 rounded transition-colors"
+                          title={showCostPrice ? 'Ẩn giá nhập' : 'Hiện giá nhập'}
+                        >
+                          {showCostPrice ? <EyeOff size={13} /> : <Eye size={13} />}
+                        </button>
+                      </div>
+                    </th>
+                  )}
                   <th className="text-right text-sm font-medium text-gray-500 px-3 py-3 w-32">Tổng Giá</th>
                   <th className="text-left text-sm font-medium text-gray-500 px-3 py-3 min-w-[280px]">Ghi Chú</th>
                   <th className="hidden md:table-cell text-left text-sm font-medium text-gray-500 px-3 py-3">Ngày Tạo</th>
@@ -481,12 +496,26 @@ function BundlesTab() {
                             {bundle.items?.length ?? 0}
                           </span>
                         </td>
+                        {isAdmin && (
+                          <td className="px-3 py-3 text-right tabular-nums">
+                            {showCostPrice ? (
+                              <span className="font-semibold text-orange-600 text-sm whitespace-nowrap">
+                                {(() => {
+                                  const totalCost = (bundle.items ?? []).reduce((s, bi) => s + (bi.product?.cost_price ?? 0) * bi.quantity, 0)
+                                  return totalCost > 0 ? formatCurrency(totalCost) : '—'
+                                })()}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 text-sm font-mono tracking-wider">******</span>
+                            )}
+                          </td>
+                        )}
                         <td className="px-3 py-3 text-right tabular-nums">
                           <div className="flex items-center justify-end gap-1.5">
                             <span className="font-semibold text-green-600 text-sm whitespace-nowrap">
                               {(() => {
                                 const total = (bundle.items ?? []).reduce((s, bi) => s + (bi.product?.sale_price ?? 0) * bi.quantity, 0)
-                                return total > 0 ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(total) : '—'
+                                return total > 0 ? formatCurrency(total) : '—'
                               })()}
                             </span>
                             {isExpanded ? <ChevronUp size={14} className="text-gray-400 flex-shrink-0" /> : <ChevronDown size={14} className="text-gray-400 flex-shrink-0" />}

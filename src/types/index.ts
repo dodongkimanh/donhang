@@ -269,7 +269,7 @@ export interface BundleItem {
   product_id: string
   quantity: number
   created_at: string
-  product?: Pick<Product, 'id' | 'name' | 'product_code' | 'sale_price' | 'unit' | 'quantity' | 'image_url'>
+  product?: Pick<Product, 'id' | 'name' | 'product_code' | 'sale_price' | 'cost_price' | 'unit' | 'quantity' | 'image_url'>
 }
 
 export interface ProductBundle {
