@@ -451,7 +451,7 @@ function BundlesTab() {
                   <th className="text-left text-sm font-medium text-gray-500 px-3 py-3 min-w-[160px]">Tên Bộ Sản Phẩm</th>
                   <th className="text-center text-sm font-medium text-gray-500 px-3 py-3 w-16">Số Món</th>
                   {isAdmin && (
-                    <th className="text-right text-sm font-medium text-gray-500 px-3 py-3 w-36">
+                    <th className="text-right text-sm font-medium text-gray-500 px-3 py-3 w-32">
                       <div className="flex items-center justify-end gap-1.5">
                         Tổng Giá Nhập
                         <button
@@ -464,7 +464,7 @@ function BundlesTab() {
                       </div>
                     </th>
                   )}
-                  <th className="text-right text-sm font-medium text-gray-500 px-3 py-3 w-32">Tổng Giá</th>
+                  <th className="text-right text-sm font-medium text-gray-500 px-3 py-3 w-32">Tổng Giá Bán</th>
                   <th className="text-left text-sm font-medium text-gray-500 px-3 py-3 min-w-[280px]">Ghi Chú</th>
                   <th className="hidden md:table-cell text-left text-sm font-medium text-gray-500 px-3 py-3">Ngày Tạo</th>
                   {canEdit && <th className="text-right text-sm font-medium text-gray-500 px-3 py-3">Thao Tác</th>}
@@ -539,7 +539,8 @@ function BundlesTab() {
                         )}
                       </tr>
                       {isExpanded && (bundle.items ?? []).map((item: BundleItem) => {
-                        const linePrice = (item.product?.sale_price ?? 0) * item.quantity
+                        const lineCost = (item.product?.cost_price ?? 0) * item.quantity
+                        const lineSale = (item.product?.sale_price ?? 0) * item.quantity
                         return (
                           <tr key={`${bundle.id}-${item.id}`} className="bg-purple-50/30 border-t-0">
                             <td className="px-3 py-1.5 pl-6">
@@ -556,8 +557,17 @@ function BundlesTab() {
                             <td className="px-3 py-1.5 text-center">
                               <span className="text-[11px] font-semibold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded-full whitespace-nowrap">SL:{item.quantity}</span>
                             </td>
+                            {isAdmin && (
+                              <td className="px-3 py-1.5 text-right text-xs tabular-nums whitespace-nowrap">
+                                {showCostPrice ? (
+                                  <span className="text-orange-600 font-medium">{lineCost > 0 ? formatCurrency(lineCost) : '—'}</span>
+                                ) : (
+                                  <span className="text-gray-400 font-mono text-[10px]">***</span>
+                                )}
+                              </td>
+                            )}
                             <td className="px-3 py-1.5 text-right text-xs font-semibold text-gray-800 tabular-nums whitespace-nowrap">
-                              {linePrice > 0 ? `${linePrice.toLocaleString('vi-VN')} đ` : '—'}
+                              {lineSale > 0 ? formatCurrency(lineSale) : '—'}
                             </td>
                             <td />
                             <td className="hidden md:table-cell" />
