@@ -724,7 +724,9 @@ export function InventoryPage() {
       const isMulti = batchTxs.length > 1
       const newNote = note || null
       const oldNote = batchTxs[0]?.note || null
-      let noteRecorded = false
+
+      // Thu thập tất cả thay đổi sản phẩm trước, ghi chú ở cuối
+      const allHistoryRows: Array<{ transaction_id: string; field_name: string; old_value: string; new_value: string; edited_by: string }> = []
 
       for (const ei of items) {
         const tx = batchTxs.find((t) => t.id === ei.id)
@@ -734,43 +736,48 @@ export function InventoryPage() {
         const productName = tx.product?.name ?? ''
         const label = isMulti ? ` (${productName})` : ''
 
-        // Ghi lịch sử thay đổi
-        const changes: Array<{ field_name: string; old_value: string; new_value: string }> = []
-
         if (newQty !== tx.quantity) {
-          changes.push({
+          allHistoryRows.push({
+            transaction_id: tx.id,
             field_name: `Số lượng${label}`,
             old_value: tx.quantity.toString(),
             new_value: newQty.toString(),
+            edited_by: profile.id,
           })
         }
         if (newPrice !== tx.unit_price) {
-          changes.push({
+          allHistoryRows.push({
+            transaction_id: tx.id,
             field_name: `Đơn giá${label}`,
             old_value: tx.unit_price.toString(),
             new_value: newPrice.toString(),
-          })
-        }
-        if (!noteRecorded && newNote !== oldNote) {
-          changes.push({
-            field_name: 'Ghi chú',
-            old_value: oldNote ?? '',
-            new_value: newNote ?? '',
-          })
-          noteRecorded = true
-        }
-
-        if (changes.length > 0) {
-          const historyRows = changes.map((c) => ({
-            transaction_id: tx.id,
-            field_name: c.field_name,
-            old_value: c.old_value,
-            new_value: c.new_value,
             edited_by: profile.id,
-          }))
-          const { error: hErr } = await supabase.from('inventory_edit_history').insert(historyRows)
-          if (hErr) console.warn('Lưu lịch sử lỗi:', hErr.message)
+          })
         }
+      }
+
+      // Ghi chú ở cuối cùng (1 lần duy nhất)
+      if (newNote !== oldNote) {
+        allHistoryRows.push({
+          transaction_id: batchTxs[0].id,
+          field_name: 'Ghi chú',
+          old_value: oldNote ?? '',
+          new_value: newNote ?? '',
+          edited_by: profile.id,
+        })
+      }
+
+      if (allHistoryRows.length > 0) {
+        const { error: hErr } = await supabase.from('inventory_edit_history').insert(allHistoryRows)
+        if (hErr) console.warn('Lưu lịch sử lỗi:', hErr.message)
+      }
+
+      // Cập nhật dữ liệu
+      for (const ei of items) {
+        const tx = batchTxs.find((t) => t.id === ei.id)
+        if (!tx) continue
+        const newQty = parseInt(ei.quantity) || tx.quantity
+        const newPrice = parseFloat(ei.unit_price) || tx.unit_price
 
         // Cập nhật tồn kho khi SL thay đổi
         const delta = newQty - tx.quantity
