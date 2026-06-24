@@ -61,19 +61,20 @@ export function SuppliersPage() {
     },
   })
 
-  // All-time import amounts per supplier (for debt calculation)
+  // All-time import amounts per supplier (for debt calculation, exclude cancelled)
   const { data: importTotals = [] } = useQuery({
     queryKey: ['supplier-import-totals'],
     queryFn: async () => {
       const { data } = await supabase
         .from('inventory_transactions')
-        .select('supplier_id, quantity, unit_price')
+        .select('supplier_id, quantity, unit_price, note')
         .eq('type', 'import')
-      return (data ?? []) as { supplier_id: string | null; quantity: number; unit_price: number }[]
+      return ((data ?? []) as { supplier_id: string | null; quantity: number; unit_price: number; note: string | null }[])
+        .filter((t) => !t.note?.includes('[ĐÃ HỦY]'))
     },
   })
 
-  // Export returns to supplier (reduce debt)
+  // Export returns to supplier (reduce debt, exclude cancelled)
   const { data: returnTotals = [] } = useQuery({
     queryKey: ['supplier-return-totals'],
     queryFn: async () => {
@@ -82,7 +83,8 @@ export function SuppliersPage() {
         .select('supplier_id, quantity, unit_price, note')
         .eq('type', 'export')
         .like('note', '%Xuất trả NCC%')
-      return (data ?? []) as { supplier_id: string | null; quantity: number; unit_price: number; note: string }[]
+      return ((data ?? []) as { supplier_id: string | null; quantity: number; unit_price: number; note: string }[])
+        .filter((t) => !t.note?.includes('[ĐÃ HỦY]'))
     },
   })
 

@@ -654,6 +654,8 @@ export function InventoryPage() {
       queryClient.invalidateQueries({ queryKey: ['inventory-transactions'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['products-simple'] })
+      queryClient.invalidateQueries({ queryKey: ['supplier-import-totals'] })
+      queryClient.invalidateQueries({ queryKey: ['supplier-return-totals'] })
       toast.success('Đã hủy phiếu và hoàn nguyên tồn kho')
       setCancelConfirmKey(null)
       setCancelReason('')
@@ -701,6 +703,8 @@ export function InventoryPage() {
       queryClient.invalidateQueries({ queryKey: ['inventory-transactions'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['products-simple'] })
+      queryClient.invalidateQueries({ queryKey: ['supplier-import-totals'] })
+      queryClient.invalidateQueries({ queryKey: ['supplier-return-totals'] })
       toast.success('Đã xóa phiếu')
       setDeleteConfirmKey(null)
     },
