@@ -1310,7 +1310,14 @@ export function InventoryPage() {
                               <div className="text-[10px] text-gray-400 uppercase tracking-wide">tổng tiền</div>
                               <div className="font-medium">{formatCurrency(totalValue)}</div>
                             </div>
-                          ) : formatCurrency(first.unit_price)}
+                          ) : (
+                            <div className="leading-tight">
+                              <div className="font-medium">{formatCurrency(first.unit_price)}</div>
+                              {first.quantity > 1 && (
+                                <div className="text-[10px] text-gray-400 uppercase tracking-wide">tổng tiền <span className="font-semibold text-gray-600">{formatCurrency(totalValue)}</span></div>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-sm whitespace-normal break-words">
                           {noteInfo.text ? <span className="text-gray-500">{noteInfo.text}</span> : <span className="text-gray-400">–</span>}
