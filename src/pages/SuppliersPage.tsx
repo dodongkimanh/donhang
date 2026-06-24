@@ -73,6 +73,19 @@ export function SuppliersPage() {
     },
   })
 
+  // Export returns to supplier (reduce debt)
+  const { data: returnTotals = [] } = useQuery({
+    queryKey: ['supplier-return-totals'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('inventory_transactions')
+        .select('supplier_id, quantity, unit_price, note')
+        .eq('type', 'export')
+        .like('note', '%Xuất trả NCC%')
+      return (data ?? []) as { supplier_id: string | null; quantity: number; unit_price: number; note: string }[]
+    },
+  })
+
   // All supplier payments
   const { data: payments = [] } = useQuery({
     queryKey: ['supplier-payments'],
@@ -91,18 +104,23 @@ export function SuppliersPage() {
     for (const t of importTotals) {
       if (t.supplier_id) importedBySupplier[t.supplier_id] = (importedBySupplier[t.supplier_id] ?? 0) + t.quantity * t.unit_price
     }
+    const returnedBySupplier: Record<string, number> = {}
+    for (const t of returnTotals) {
+      if (t.supplier_id) returnedBySupplier[t.supplier_id] = (returnedBySupplier[t.supplier_id] ?? 0) + t.quantity * t.unit_price
+    }
     const paidBySupplier: Record<string, number> = {}
     for (const p of payments) {
       paidBySupplier[p.supplier_id] = (paidBySupplier[p.supplier_id] ?? 0) + p.amount
     }
-    return { importedBySupplier, paidBySupplier }
-  }, [importTotals, payments])
+    return { importedBySupplier, returnedBySupplier, paidBySupplier }
+  }, [importTotals, returnTotals, payments])
 
   function getDebtInfo(supplier: Supplier) {
     const opening = supplier.opening_balance ?? 0
     const imported = debtMap.importedBySupplier[supplier.id] ?? 0
+    const returned = debtMap.returnedBySupplier[supplier.id] ?? 0
     const paid = debtMap.paidBySupplier[supplier.id] ?? 0
-    return { opening, imported, paid, debt: opening + imported - paid }
+    return { opening, imported, returned, paid, debt: opening + imported - returned - paid }
   }
 
   // ── Payment mutation ──
@@ -481,6 +499,12 @@ export function SuppliersPage() {
                   <p className="text-[10px] text-blue-500 font-medium uppercase tracking-wide mb-1">Đã Nhập Hệ Thống</p>
                   <p className="text-sm font-bold text-blue-700">{formatCurrency(debtInfo.imported)}</p>
                 </div>
+                {debtInfo.returned > 0 && (
+                  <div className="bg-amber-50 border border-amber-100 rounded-xl px-3 py-3 text-center">
+                    <p className="text-[10px] text-amber-500 font-medium uppercase tracking-wide mb-1">Xuất Trả NCC</p>
+                    <p className="text-sm font-bold text-amber-700">-{formatCurrency(debtInfo.returned)}</p>
+                  </div>
+                )}
                 <div className="bg-green-50 border border-green-100 rounded-xl px-3 py-3 text-center">
                   <p className="text-[10px] text-green-500 font-medium uppercase tracking-wide mb-1">Đã Thanh Toán</p>
                   <p className="text-sm font-bold text-green-700">{formatCurrency(debtInfo.paid)}</p>
