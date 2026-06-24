@@ -104,6 +104,7 @@ export function InventoryPage() {
   const [adjCancelReason, setAdjCancelReason] = useState('')
   const [adjCancelConfirm, setAdjCancelConfirm] = useState(false)
   const [historyBatchKey, setHistoryBatchKey] = useState<string | null>(null)
+  const [deleteEditItemId, setDeleteEditItemId] = useState<string | null>(null)
   const printAfterSaveRef = useRef(false)
 
   // Export multi-product state
@@ -827,6 +828,66 @@ export function InventoryPage() {
     onError: (e: Error) => toast.error(e.message || 'Có lỗi khi sửa phiếu'),
   })
 
+  const deleteEditItemMutation = useMutation({
+    mutationFn: async (txId: string) => {
+      if (!profile) throw new Error('Chưa đăng nhập')
+      if (!editBatchKey) throw new Error('Không tìm thấy phiếu')
+      const batchTxs = transactions.filter(
+        (t) => t.type !== 'adjustment' && getTxGroupKey(t) === editBatchKey,
+      )
+      const tx = batchTxs.find((t) => t.id === txId)
+      if (!tx) throw new Error('Không tìm thấy sản phẩm trong phiếu')
+      const alreadyCancelled = tx.note?.includes('[ĐÃ HỦY]')
+      if (!alreadyCancelled && tx.supplier_id) {
+        const { data: psList } = await supabase
+          .from('product_suppliers')
+          .select('id, quantity')
+          .eq('product_id', tx.product_id)
+          .eq('supplier_id', tx.supplier_id)
+        if (psList && psList.length > 0) {
+          const ps = psList[0] as { id: string; quantity: number }
+          const newQty =
+            tx.type === 'import'
+              ? Math.max(0, ps.quantity - tx.quantity)
+              : ps.quantity + tx.quantity
+          const { error: sErr } = await supabase.from('product_suppliers').update({ quantity: newQty }).eq('id', ps.id)
+          if (sErr) throw new Error(`Lỗi hoàn tồn kho: ${sErr.message}`)
+        }
+      }
+      const { error: hErr } = await supabase.from('inventory_edit_history').insert({
+        transaction_id: tx.id,
+        field_name: `Xóa sản phẩm (${tx.product?.name ?? ''})`,
+        old_value: `SL: ${tx.quantity}, Giá: ${tx.unit_price}`,
+        new_value: 'Đã xóa',
+        edited_by: profile.id,
+      })
+      if (hErr) console.warn('Lưu lịch sử lỗi:', hErr.message)
+      const { error: txErr } = await supabase.from('inventory_transactions').delete().eq('id', tx.id)
+      if (txErr) throw new Error(`Lỗi xóa sản phẩm: ${txErr.message}`)
+      return { deletedId: txId, remainingCount: batchTxs.length - 1 }
+    },
+    onSuccess: async (result) => {
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ['inventory-transactions'] }),
+        queryClient.refetchQueries({ queryKey: ['products'] }),
+        queryClient.refetchQueries({ queryKey: ['products-simple'] }),
+        queryClient.refetchQueries({ queryKey: ['inventory-edit-history'] }),
+      ])
+      setEditItems((prev) => prev.filter((it) => it.id !== result.deletedId))
+      setDeleteEditItemId(null)
+      if (result.remainingCount === 0) {
+        setEditBatchKey(null)
+        toast.success('Đã xóa sản phẩm cuối — phiếu đã được xóa')
+      } else {
+        toast.success('Đã xóa sản phẩm khỏi phiếu')
+      }
+    },
+    onError: (e: Error) => {
+      toast.error(e.message || 'Có lỗi khi xóa sản phẩm')
+      setDeleteEditItemId(null)
+    },
+  })
+
   const [filterSupplier, setFilterSupplier] = useState<string>('all')
 
   const txBySupplier = filterSupplier === 'all'
@@ -1401,15 +1462,24 @@ export function InventoryPage() {
                 {/* Single-product: full edit */}
                 {!isMulti && editItems[0] && (
                   <>
-                    <div className="grid grid-cols-2 gap-3 bg-gray-50 rounded-xl p-3 text-sm">
-                      <div>
-                        <p className="text-xs text-gray-400 mb-0.5">Sản phẩm</p>
-                        <p className="font-medium text-gray-900">{editFirst.product?.name ?? '—'}</p>
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 grid grid-cols-2 gap-3 bg-gray-50 rounded-xl p-3 text-sm">
+                        <div>
+                          <p className="text-xs text-gray-400 mb-0.5">Sản phẩm</p>
+                          <p className="font-medium text-gray-900">{editFirst.product?.name ?? '—'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-400 mb-0.5">Nhà cung cấp</p>
+                          <p className="text-gray-700">{editFirst.supplier?.name ?? '—'}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-xs text-gray-400 mb-0.5">Nhà cung cấp</p>
-                        <p className="text-gray-700">{editFirst.supplier?.name ?? '—'}</p>
-                      </div>
+                      <button
+                        onClick={() => setDeleteEditItemId(editItems[0].id)}
+                        className="mt-2 p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Xóa sản phẩm"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
@@ -1443,6 +1513,7 @@ export function InventoryPage() {
                           <th className="text-left px-4 py-2.5 font-semibold text-gray-600 text-xs uppercase">Sản Phẩm / NCC</th>
                           <th className="text-right px-4 py-2.5 font-semibold text-gray-600 text-xs uppercase w-20">SL</th>
                           <th className="text-right px-4 py-2.5 font-semibold text-gray-600 text-xs uppercase w-36">Đơn Giá</th>
+                          <th className="w-10"></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
@@ -1467,6 +1538,15 @@ export function InventoryPage() {
                                 onChange={(e) => setEditItems((prev) => prev.map((it, i) => i === idx ? { ...it, unit_price: e.target.value.replace(/\D/g, '') } : it))}
                                 className="w-full text-right px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-blue-500 outline-none"
                               />
+                            </td>
+                            <td className="px-2 py-2.5">
+                              <button
+                                onClick={() => setDeleteEditItemId(ei.id)}
+                                className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                title="Xóa sản phẩm"
+                              >
+                                <Trash2 size={14} />
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -1543,6 +1623,16 @@ export function InventoryPage() {
           </div>
         )
       })()}
+
+      <ConfirmDialog
+        isOpen={deleteEditItemId !== null}
+        onClose={() => setDeleteEditItemId(null)}
+        title="Xóa sản phẩm khỏi phiếu"
+        message={`Bạn có chắc muốn xóa "${editItems.find((it) => it.id === deleteEditItemId)?.product_name ?? ''}" khỏi phiếu? Tồn kho sẽ được hoàn nguyên.`}
+        onConfirm={() => deleteEditItemId && deleteEditItemMutation.mutate(deleteEditItemId)}
+        confirmLabel="Xóa"
+        loading={deleteEditItemMutation.isPending}
+      />
 
       {/* ── History Modal ── */}
       {historyBatchKey !== null && (() => {
