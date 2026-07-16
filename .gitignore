@@ -32,3 +32,6 @@ pnpm-debug.log*
 *.tsbuildinfo
 
 .vercel
+
+# TWA Android build output (contains private signing key)
+android-twa/

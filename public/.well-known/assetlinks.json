@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.kimanh.donhang",
+        "sha256_cert_fingerprints": ["77:C7:B6:1A:9F:8D:FC:AA:98:F8:DD:22:E9:BD:F4:BF:35:9F:94:80:35:39:C9:BC:92:8F:BD:4E:24:85:C5:19"]
+      }
+    }]
