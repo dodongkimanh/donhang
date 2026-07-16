@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, ArrowDownCircle, ArrowUpCircle, Truck, List, Printer, SlidersHorizontal, X, TrendingUp, TrendingDown, Minus, Trash2, Calendar, ChevronDown, ScanLine, UserCheck, RotateCcw, Pencil, Ban, History } from 'lucide-react'
+import { Plus, ArrowDownCircle, ArrowUpCircle, Truck, List, Printer, SlidersHorizontal, X, TrendingUp, TrendingDown, Minus, Trash2, Calendar, ChevronDown, ScanLine, UserCheck, RotateCcw, Pencil, Ban, History, Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { Modal } from '@/components/ui/Modal'
@@ -182,6 +182,26 @@ export function InventoryPage() {
       return (data ?? []) as InventoryTransaction[]
     },
   })
+
+  // Order → khách hàng (dùng để hiển thị "Người nhận" cho phiếu xuất theo đơn hàng)
+  const { data: orderRecipients = [] } = useQuery({
+    queryKey: ['inventory-order-recipients'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('order_number, customer:customers(name, phone)')
+      if (error) throw error
+      return (data ?? []) as { order_number: string; customer: { name: string; phone: string | null } | null }[]
+    },
+  })
+
+  const orderRecipientMap = (() => {
+    const map = new Map<string, { name: string; phone: string }>()
+    for (const o of orderRecipients) {
+      if (o.customer) map.set(o.order_number, { name: o.customer.name, phone: o.customer.phone ?? '' })
+    }
+    return map
+  })()
 
   // Fetch full product (with product_suppliers) when user wants to print
   const { data: printProduct = null } = useQuery({
@@ -893,12 +913,21 @@ export function InventoryPage() {
   })
 
   const [filterSupplier, setFilterSupplier] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState('')
 
   const txBySupplier = filterSupplier === 'all'
     ? transactions
     : transactions.filter((t) => t.supplier_id === filterSupplier)
 
-  const filtered = txBySupplier.filter((t) => filterType === 'all' || t.type === filterType)
+  const searchLower = searchQuery.trim().toLowerCase()
+  const filtered = txBySupplier.filter((t) => {
+    if (filterType !== 'all' && t.type !== filterType) return false
+    if (!searchLower) return true
+    const orderNumber = extractOrderNumber(t.note)
+    const recipient = getRecipient(t.note)
+    const haystack = [orderNumber, recipient?.name, recipient?.phone].filter(Boolean).join(' ').toLowerCase()
+    return haystack.includes(searchLower)
+  })
 
   const importRows = txBySupplier.filter((t) => t.type === 'import')
   const exportRows = txBySupplier.filter((t) => t.type === 'export')
@@ -1007,6 +1036,32 @@ export function InventoryPage() {
       .replace(/\s*\[ĐÃ HỦY\]/, '')
       .trim()
     return { text: cleanNote, cancelReason }
+  }
+
+  function extractOrderNumber(note: string | null | undefined): string | null {
+    if (!note) return null
+    const m = note.match(/Xuất theo đơn (\S+)/)
+    return m ? m[1] : null
+  }
+
+  // Suy ra "Người nhận" từ ghi chú: đơn hàng (tra cứu khách hàng), nhập tay khi xuất, hoặc trả NCC
+  function getRecipient(note: string | null | undefined): { name: string; phone: string } | null {
+    if (!note) return null
+    const orderNumber = extractOrderNumber(note)
+    if (orderNumber) {
+      const info = orderRecipientMap.get(orderNumber)
+      return info ? { name: info.name, phone: info.phone } : null
+    }
+    const nameMatch = note.match(/Người nhận:\s*([^|]+)/)
+    if (nameMatch) {
+      const phoneMatch = note.match(/SĐT:\s*([^|]+)/)
+      return { name: nameMatch[1].trim(), phone: phoneMatch ? phoneMatch[1].trim() : '' }
+    }
+    const supplierReturnMatch = note.match(/Xuất trả NCC:\s*([^|]+)/)
+    if (supplierReturnMatch) {
+      return { name: `NCC: ${supplierReturnMatch[1].trim()}`, phone: '' }
+    }
+    return null
   }
 
   // Build grouped display items: adjustments stay per-row; import/export group by batch
@@ -1133,6 +1188,21 @@ export function InventoryPage() {
             ))}
           </select>
         </div>
+        <div className="flex items-center gap-1.5 bg-white border border-gray-300 rounded-lg px-2 py-1.5 flex-1 min-w-[200px]">
+          <Search size={14} className="text-gray-400 flex-shrink-0" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Tìm theo đơn hàng, người nhận hoặc SĐT..."
+            className="text-sm outline-none text-gray-700 bg-transparent w-full"
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} className="text-gray-400 hover:text-gray-600 flex-shrink-0">
+              <X size={14} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -1189,7 +1259,7 @@ export function InventoryPage() {
       ) : (
         <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm" style={{ minWidth: 1100 }}>
+            <table className="w-full text-sm" style={{ minWidth: 1240 }}>
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th style={{ width: 90 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Loại</th>
@@ -1197,6 +1267,7 @@ export function InventoryPage() {
                   <th style={{ width: 130 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Nhà Cung Cấp</th>
                   <th style={{ width: 70 }} className="text-right font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Số Lượng</th>
                   <th style={{ width: 100 }} className="text-right font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Đơn Giá</th>
+                  <th style={{ width: 140 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Người Nhận</th>
                   <th className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Ghi Chú</th>
                   <th style={{ width: 120 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Người GN</th>
                   <th style={{ width: 120 }} className="text-left font-semibold text-gray-500 uppercase text-xs tracking-wide px-4 py-3">Thời Gian</th>
@@ -1233,6 +1304,7 @@ export function InventoryPage() {
                         </td>
                         <td className="px-4 py-3 text-right text-gray-700 font-medium">{t.quantity}</td>
                         <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(t.unit_price)}</td>
+                        <td className="px-4 py-3 text-sm text-gray-400">–</td>
                         <td className="px-4 py-3 text-sm text-gray-500 whitespace-normal break-words">{t.note ?? '–'}</td>
                         <td className="px-4 py-3 text-sm text-gray-500">{t.profile?.full_name ?? '–'}</td>
                         <td className="px-4 py-3 text-sm text-gray-400 whitespace-nowrap">{formatDate(t.created_at)}</td>
@@ -1256,6 +1328,7 @@ export function InventoryPage() {
 
                   const noteInfo = displayNote(first.note)
                   const voucherCode = getVoucherCode(first)
+                  const recipient = getRecipient(first.note)
 
                   return (
                     <Fragment key={key}>
@@ -1322,6 +1395,14 @@ export function InventoryPage() {
                               )}
                             </div>
                           )}
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          {recipient ? (
+                            <div className="leading-tight">
+                              <div className="text-gray-700 font-medium truncate max-w-[140px]" title={recipient.name}>{recipient.name}</div>
+                              {recipient.phone && <div className="text-xs text-gray-400">{recipient.phone}</div>}
+                            </div>
+                          ) : <span className="text-gray-400">–</span>}
                         </td>
                         <td className="px-4 py-3 text-sm whitespace-normal break-words">
                           {noteInfo.text ? <span className="text-gray-500">{noteInfo.text}</span> : <span className="text-gray-400">–</span>}
@@ -1416,6 +1497,7 @@ export function InventoryPage() {
                           </td>
                           <td className="px-4 py-2.5 text-right text-gray-700 text-sm">{t.quantity}</td>
                           <td className="px-4 py-2.5 text-right text-gray-600 text-sm">{formatCurrency(t.unit_price)}</td>
+                          <td className="px-4 py-2.5" />
                           <td className="px-4 py-2.5 text-sm text-gray-400 whitespace-normal break-words">{t.note ?? '–'}</td>
                           <td className="px-4 py-2.5" />
                           <td className="px-4 py-2.5" />
@@ -1435,7 +1517,7 @@ export function InventoryPage() {
                 })}
                 {displayItems.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="text-center py-12 text-gray-400">
+                    <td colSpan={10} className="text-center py-12 text-gray-400">
                       Chưa có giao dịch nào
                     </td>
                   </tr>
