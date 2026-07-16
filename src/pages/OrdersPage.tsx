@@ -2979,10 +2979,10 @@ export function OrdersPage() {
         .in('order_id', visibleOrderIds)
         .order('changed_at', { ascending: false })
       if (error) throw error
-      const map: Record<string, { fullName: string; status: OrderStatus }> = {}
-      for (const row of (data ?? []) as unknown as { order_id: string; new_status: OrderStatus; profile: { full_name: string } | null }[]) {
+      const map: Record<string, { fullName: string; status: OrderStatus; changedAt: string }> = {}
+      for (const row of (data ?? []) as unknown as { order_id: string; new_status: OrderStatus; changed_at: string; profile: { full_name: string } | null }[]) {
         if (!map[row.order_id]) {
-          map[row.order_id] = { fullName: row.profile?.full_name ?? 'NV', status: row.new_status }
+          map[row.order_id] = { fullName: row.profile?.full_name ?? 'NV', status: row.new_status, changedAt: row.changed_at }
         }
       }
       return map
@@ -3532,6 +3532,7 @@ export function OrdersPage() {
                               <div className="text-xs leading-snug">
                                 <span className="font-semibold text-teal-600">{latestStatusChangeByOrder[order.id].fullName}:</span>{' '}
                                 <span className="text-gray-700">{STATUS_ACTION_LABEL[latestStatusChangeByOrder[order.id].status]}</span>
+                                <span className="text-gray-300 ml-1 whitespace-nowrap">{formatDate(latestStatusChangeByOrder[order.id].changedAt)}</span>
                               </div>
                             )}
                           </div>
