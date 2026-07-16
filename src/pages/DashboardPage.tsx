@@ -82,6 +82,16 @@ type RawOrder = {
   employee?: { id: string; full_name: string } | null
 }
 
+type RawOrderItem = {
+  id: string
+  product_id: string
+  quantity: number
+  subtotal: number
+  cost_price: number | null
+  order?: { status: string; created_at: string } | null
+  product?: { name: string; unit: string; cost_price: number } | null
+}
+
 interface StatCard {
   title: string
   value: string | number
@@ -147,6 +157,19 @@ export function DashboardPage() {
       return (data ?? []) as RawOrder[]
     },
     enabled: !!profile,
+  })
+
+  // ── All order items for "hàng hóa bán chạy" report (admin / kế toán) ────
+
+  const { data: allOrderItems = [] } = useQuery({
+    queryKey: ['dashboard-all-order-items'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('order_items')
+        .select('id, product_id, quantity, subtotal, cost_price, order:orders(status, created_at), product:products(name, unit, cost_price)')
+      return (data ?? []) as RawOrderItem[]
+    },
+    enabled: !!profile && isPrivileged,
   })
 
   // ── Derived totals – theo tháng được chọn ────────────────────────────
@@ -228,6 +251,50 @@ export function DashboardPage() {
     data.sort((a, b) => (b._total as number) - (a._total as number))
     return { empChartData: data, visibleStatuses: visible }
   }, [salesByEmployee, activeStatuses, disabledStatuses])
+
+  // ── Chart 1b data: Hàng hóa bán chạy nhất theo trạng thái (tháng này) ───
+
+  const { topProducts, productMaxQty } = useMemo(() => {
+    const monthPrefix = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`
+    const visible = activeStatuses.filter(s => !disabledStatuses.has(s))
+    const prodMap = new Map<string, Record<string, number | string>>()
+
+    for (const item of allOrderItems) {
+      const order = item.order
+      if (!order || !order.created_at.startsWith(monthPrefix)) continue
+      if (!visible.includes(order.status)) continue
+      const prodId = item.product_id
+      if (!prodMap.has(prodId)) {
+        prodMap.set(prodId, { name: item.product?.name ?? prodId, unit: item.product?.unit ?? '' })
+      }
+      const entry = prodMap.get(prodId)!
+      entry[order.status] = ((entry[order.status] as number) || 0) + item.quantity
+    }
+
+    const data = Array.from(prodMap.values()).map(prod => {
+      const total = visible.reduce((s, st) => s + ((prod[st] as number) || 0), 0)
+      return { ...prod, _total: total }
+    }).filter(p => (p._total as number) > 0)
+
+    data.sort((a, b) => (b._total as number) - (a._total as number))
+    const top = data.slice(0, 10)
+    return { topProducts: top, productMaxQty: Math.max(...top.map(p => p._total as number), 1) }
+  }, [allOrderItems, selectedYear, selectedMonth, activeStatuses, disabledStatuses])
+
+  // ── Lợi nhuận hàng hóa (giá bán - giá vốn) tháng này, theo trạng thái đang lọc (admin) ───
+
+  const productProfit = useMemo(() => {
+    const monthPrefix = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`
+    let profit = 0
+    for (const item of allOrderItems) {
+      const order = item.order
+      if (!order || !order.created_at.startsWith(monthPrefix)) continue
+      if (disabledStatuses.has(order.status)) continue
+      const cost = item.cost_price ?? item.product?.cost_price ?? 0
+      profit += item.subtotal - cost * item.quantity
+    }
+    return profit
+  }, [allOrderItems, selectedYear, selectedMonth, disabledStatuses])
 
   // ── Chart 2 data: Tháng được chọn vs tháng trước – theo từng ngày ───
 
@@ -346,12 +413,23 @@ export function DashboardPage() {
 
       {/* Doanh thu tháng – nhảy theo trạng thái được chọn */}
       {isPrivileged && (
-        <div className="bg-white rounded-xl shadow-sm px-4 py-3">
-          <h2 className="text-xs font-medium text-gray-500 mb-0.5">Doanh Thu {monthLabel}</h2>
-          <p className="text-2xl sm:text-3xl font-bold text-blue-600">{formatCurrency(filteredRevenue)}</p>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Tổng {filteredOrderCount} đơn trong {monthLabel.toLowerCase()}
-          </p>
+        <div className={`grid grid-cols-1 ${isAdmin ? 'sm:grid-cols-2' : ''} gap-3`}>
+          <div className="bg-white rounded-xl shadow-sm px-4 py-3">
+            <h2 className="text-xs font-medium text-gray-500 mb-0.5">Doanh Thu {monthLabel}</h2>
+            <p className="text-2xl sm:text-3xl font-bold text-blue-600">{formatCurrency(filteredRevenue)}</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Tổng {filteredOrderCount} đơn trong {monthLabel.toLowerCase()}
+            </p>
+          </div>
+          {isAdmin && (
+            <div className="bg-white rounded-xl shadow-sm px-4 py-3">
+              <h2 className="text-xs font-medium text-gray-500 mb-0.5">Lợi Nhuận Hàng Hóa {monthLabel}</h2>
+              <p className={`text-2xl sm:text-3xl font-bold ${productProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {formatCurrency(productProfit)}
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">Doanh số trừ giá vốn hàng bán</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -593,6 +671,54 @@ export function DashboardPage() {
           </ResponsiveContainer>
         </div>
       </div>
+
+      {/* Chart 1b: Hàng hóa bán chạy nhất theo trạng thái (admin / kế toán) */}
+      {isPrivileged && topProducts.length > 0 && (
+        <div className="bg-white rounded-xl p-5">
+          <h2 className="text-base font-semibold text-gray-900 mb-3">
+            Hàng Hóa Bán Chạy Nhất
+            <span className="ml-2 text-sm font-normal text-gray-400">
+              {monthLabel}
+            </span>
+          </h2>
+
+          <div className="space-y-2">
+            {topProducts.map((prod: Record<string, number | string>) => {
+              const total = prod._total as number
+              const name = prod.name as string
+              const unit = prod.unit as string
+              const pct = (total / productMaxQty) * 100
+              return (
+                <div key={name} className="flex items-center gap-2">
+                  <div className="w-[100px] sm:w-[160px] flex-shrink-0 text-xs text-gray-700 leading-tight text-right pr-1 truncate" title={name}>
+                    {name}
+                  </div>
+                  <div className="flex-1 flex items-center gap-2 min-w-0">
+                    <div className="flex-1 h-5 bg-gray-100 rounded-sm overflow-hidden">
+                      <div className="h-full flex" style={{ width: `${Math.max(pct, 2)}%` }}>
+                        {visibleStatuses.map((st) => {
+                          const val = (prod[st] as number) || 0
+                          if (val <= 0 || total <= 0) return null
+                          return (
+                            <div
+                              key={st}
+                              style={{ width: `${(val / total) * 100}%`, backgroundColor: STATUS_COLORS[st] ?? '#94a3b8' }}
+                              className="h-full"
+                            />
+                          )
+                        })}
+                      </div>
+                    </div>
+                    <span className="text-xs font-semibold text-gray-600 w-[60px] sm:w-[80px] flex-shrink-0">
+                      {total} {unit}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
