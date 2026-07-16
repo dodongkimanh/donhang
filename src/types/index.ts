@@ -97,6 +97,16 @@ export interface InventoryEditHistory {
   profile?: Profile
 }
 
+export interface OrderStatusHistory {
+  id: string
+  order_id: string
+  old_status: OrderStatus | null
+  new_status: OrderStatus
+  changed_by: string | null
+  changed_at: string
+  profile?: Profile
+}
+
 export interface SupplierPayment {
   id: string
   supplier_id: string

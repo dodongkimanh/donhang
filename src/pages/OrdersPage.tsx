@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus, Truck, CheckCircle, AlertTriangle, Search,
-  Send, MessageSquare, ChevronDown, Pencil, Settings, UserPlus, X, ScanLine, Printer, MapPin, Eye, EyeOff, PhoneCall,
-  RotateCcw, ArrowLeftRight, Receipt, Package, Camera, ArrowUpCircle,
+  Send, MessageSquare, ChevronDown, Pencil, Settings, UserPlus, X, ScanLine, Printer, MapPin, Eye, PhoneCall,
+  RotateCcw, ArrowLeftRight, Receipt, Package, Camera, ArrowUpCircle, Lock, History,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -14,7 +14,7 @@ import { VietnamAddressSelect } from '@/components/ui/VietnamAddressSelect'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { StatusBadge, ORDER_STATUS_CONFIG } from '@/components/ui/StatusBadge'
 import { formatCurrency, formatDate, formatDateOnly, fmtThousands } from '@/utils/format'
-import type { Order, OrderNote, OrderStatus, OrderSource, Product, Customer, OrderItem, ProductSupplier, InventoryTransaction, ReturnTicketItem, ProductBundle, Profile } from '@/types'
+import type { Order, OrderNote, OrderStatus, OrderSource, Product, Customer, OrderItem, ProductSupplier, InventoryTransaction, ReturnTicketItem, ProductBundle, Profile, OrderStatusHistory } from '@/types'
 import { useRoutePlanningStore } from '@/stores/routePlanningStore'
 import toast from 'react-hot-toast'
 
@@ -114,6 +114,20 @@ const STATUS_OPTIONS: { value: OrderStatus; label: string }[] = [
   { value: 'partial_return',    label: 'Đổi Trả 1 Phần' },
   { value: 'cancelled',         label: 'Khách Hủy' },
 ]
+
+// Nhãn hành động hiển thị ở mục ghi chú khi có người đổi trạng thái, vd "Đặng Đức Kỳ: Xác nhận đơn hàng"
+const STATUS_ACTION_LABEL: Record<OrderStatus, string> = {
+  draft: 'Tạo đơn nháp',
+  placed: 'Đặt đơn hàng',
+  confirmed: 'Xác nhận đơn hàng',
+  packing: 'Xuất kho đóng gói',
+  shipping: 'Chuyển vận chuyển',
+  completed: 'Hoàn thành đơn hàng',
+  returned: 'Chuyển hoàn đơn hàng',
+  returned_received: 'Nhận hàng hoàn',
+  partial_return: 'Đổi trả 1 phần',
+  cancelled: 'Hủy đơn hàng',
+}
 
 // Luồng chuyển trạng thái hợp lệ — 'packing' chỉ được set qua nút Xuất Kho Đóng Gói
 const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
@@ -775,6 +789,7 @@ function CreateOrderModal({
       const { data } = await supabase
         .from('products')
         .select('id, name, product_code, sale_price, unit, quantity, image_url')
+        .eq('is_hidden', false)
         .order('name')
       return (data ?? []) as Pick<Product, 'id' | 'name' | 'product_code' | 'sale_price' | 'unit' | 'quantity' | 'image_url'>[]
     },
@@ -2704,6 +2719,7 @@ export function OrdersPage() {
   const [quickOrderCustomer, setQuickOrderCustomer] = useState<{ id: string; name: string; phone?: string } | null>(null)
   const [printingOrder, setPrintingOrder] = useState<Order | null>(null)
   const [viewingOrder, setViewingOrder] = useState<Order | null>(null)
+  const [historyOrder, setHistoryOrder] = useState<Order | null>(null)
   const [search, setSearch] = useState('')
   const [statusFilters, setStatusFilters] = useState<Set<OrderStatus>>(new Set())
   const [monthFilter, setMonthFilter] = useState<string>(() => {
@@ -2711,8 +2727,10 @@ export function OrdersPage() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
   })
   const [employeeFilter, setEmployeeFilter] = useState<string>('all')
-  const [revealedCostOrders, setRevealedCostOrders] = useState<Set<string>>(new Set())
-  const [revealedProfit, setRevealedProfit] = useState(false)
+  const [costUnlocked, setCostUnlocked] = useState(false)
+  const [showCostPasswordModal, setShowCostPasswordModal] = useState(false)
+  const [costPasswordInput, setCostPasswordInput] = useState('')
+  const [costPasswordError, setCostPasswordError] = useState(false)
   const [revertingOrder, setRevertingOrder] = useState<Order | null>(null)
   const [returningOrder, setReturningOrder] = useState<Order | null>(null)
   const [exportReturnInfo, setExportReturnInfo] = useState<ExportReturnInfo | null>(null)
@@ -2811,6 +2829,43 @@ export function OrdersPage() {
     routeOrdersData.map((r) => [r.order_id, { route_id: r.route_id, route_name: r.route?.name ?? '' }])
   ), [routeOrdersData])
 
+  const [costVerifying, setCostVerifying] = useState(false)
+
+  function handleCostEyeClick() {
+    if (costUnlocked) {
+      setCostUnlocked(false)
+    } else if (isAdmin) {
+      setCostUnlocked(true)
+    } else {
+      setCostPasswordInput('')
+      setCostPasswordError(false)
+      setShowCostPasswordModal(true)
+    }
+  }
+
+  async function handleCostPasswordSubmit() {
+    if (!user?.email || !costPasswordInput.trim()) return
+    setCostVerifying(true)
+    setCostPasswordError(false)
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: costPasswordInput,
+      })
+      if (error) {
+        setCostPasswordError(true)
+      } else {
+        setCostUnlocked(true)
+        setShowCostPasswordModal(false)
+        setCostPasswordInput('')
+      }
+    } catch {
+      setCostPasswordError(true)
+    } finally {
+      setCostVerifying(false)
+    }
+  }
+
   const { data: orders = [], isLoading } = useQuery({
     queryKey: ['orders', profile?.id, isAdmin, isAccountant, isSuperAdmin],
     queryFn: async () => {
@@ -2840,16 +2895,62 @@ export function OrdersPage() {
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: OrderStatus }) => {
+      const oldStatus = orders.find((o) => o.id === id)?.status ?? null
       const { error } = await supabase.from('orders').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
       if (error) throw error
+      await supabase.from('order_status_history').insert({
+        order_id: id,
+        old_status: oldStatus,
+        new_status: status,
+        changed_by: profile?.id ?? null,
+      })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] })
       queryClient.invalidateQueries({ queryKey: ['pending-qty-by-product'] })
       queryClient.invalidateQueries({ queryKey: ['reserved-qty-for-order'] })
+      queryClient.invalidateQueries({ queryKey: ['order-status-history'] })
+      queryClient.invalidateQueries({ queryKey: ['order-status-history-latest'] })
       toast.success('Cập nhật trạng thái thành công')
     },
     onError: (e: Error) => toast.error(e.message || 'Không thể cập nhật trạng thái'),
+  })
+
+  // Lấy lần đổi trạng thái gần nhất cho các đơn đang hiển thị, để show "Tên: Hành động" ở mục ghi chú
+  const visibleOrderIds = useMemo(() => filtered.map((o) => o.id), [filtered])
+  const { data: latestStatusChangeByOrder = {} } = useQuery({
+    queryKey: ['order-status-history-latest', visibleOrderIds],
+    queryFn: async () => {
+      if (visibleOrderIds.length === 0) return {}
+      const { data, error } = await supabase
+        .from('order_status_history')
+        .select('order_id, new_status, changed_at, profile:profiles(full_name)')
+        .in('order_id', visibleOrderIds)
+        .order('changed_at', { ascending: false })
+      if (error) throw error
+      const map: Record<string, { fullName: string; status: OrderStatus }> = {}
+      for (const row of (data ?? []) as unknown as { order_id: string; new_status: OrderStatus; profile: { full_name: string } | null }[]) {
+        if (!map[row.order_id]) {
+          map[row.order_id] = { fullName: row.profile?.full_name ?? 'NV', status: row.new_status }
+        }
+      }
+      return map
+    },
+    enabled: visibleOrderIds.length > 0,
+  })
+
+  const { data: statusHistory = [], isLoading: statusHistoryLoading } = useQuery({
+    queryKey: ['order-status-history', historyOrder?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('order_status_history')
+        .select('*, profile:profiles(full_name)')
+        .eq('order_id', historyOrder!.id)
+        .order('changed_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as OrderStatusHistory[]
+    },
+    enabled: !!historyOrder,
   })
 
   const deleteMutation = useMutation({
@@ -3090,11 +3191,11 @@ export function OrdersPage() {
                     return (
                       <span className="ml-2 inline-flex items-center gap-1">
                         &nbsp;·&nbsp; LN:&nbsp;
-                        <span className={revealedProfit ? (groupProfit >= 0 ? 'text-green-300' : 'text-red-300') : 'tracking-widest text-blue-300'}>
-                          {revealedProfit ? `${groupProfit >= 0 ? '+' : ''}${groupProfit.toLocaleString('vi-VN')} đ` : '••••••'}
+                        <span className={costUnlocked ? (groupProfit >= 0 ? 'text-green-300' : 'text-red-300') : 'tracking-widest text-blue-300'}>
+                          {costUnlocked ? `${groupProfit >= 0 ? '+' : ''}${groupProfit.toLocaleString('vi-VN')} đ` : '••••••'}
                         </span>
-                        <button onClick={() => setRevealedProfit((v) => !v)} className="p-0.5 text-blue-200 hover:text-white rounded transition-colors" title={revealedProfit ? 'Ẩn lợi nhuận' : 'Hiện lợi nhuận'}>
-                          {revealedProfit ? <EyeOff size={11} /> : <Eye size={11} />}
+                        <button onClick={handleCostEyeClick} className="p-0.5 text-blue-200 hover:text-white rounded transition-colors" title={costUnlocked ? 'Khóa giá vốn' : 'Nhập mật khẩu để xem'}>
+                          {costUnlocked ? <Lock size={11} /> : <Eye size={11} />}
                         </button>
                       </span>
                     )
@@ -3310,7 +3411,15 @@ export function OrdersPage() {
                                   </td>
                                   <td className="py-1 text-gray-900 font-semibold leading-snug">{item.product?.name ?? '—'}</td>
                                   <td className={`py-1 text-right font-bold tabular-nums whitespace-nowrap pl-2 w-10 align-top ${!['packing','shipping','completed','returned','returned_received','partial_return'].includes(order.status) && item.product?.quantity !== undefined && item.quantity > item.product.quantity ? 'text-red-600' : 'text-blue-600'}`}>SL:{item.quantity}</td>
-                                  <td className="py-1 text-right text-gray-600 font-medium tabular-nums whitespace-nowrap pl-2 w-28 align-top">{formatCurrency(item.unit_price)}</td>
+                                  <td className="py-1 text-right tabular-nums whitespace-nowrap pl-2 w-28 align-top">
+                                    <span className="text-gray-600 font-medium">{formatCurrency(item.unit_price)}</span>
+                                    {costUnlocked && (isAdmin || isAccountant) && (() => {
+                                      const cp = item.cost_price != null ? item.cost_price : item.product?.cost_price ?? 0
+                                      return cp > 0 ? (
+                                        <div className="text-[10px] text-orange-500 font-medium">GV: {cp.toLocaleString('vi-VN')}</div>
+                                      ) : null
+                                    })()}
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
@@ -3319,30 +3428,23 @@ export function OrdersPage() {
                       </td>
 
                       {/* Col 4b: Giá Vốn (admin + kế toán) */}
-                      {(isAdmin || isAccountant) && (() => {
-                        const revealed = revealedCostOrders.has(order.id)
-                        return (
+                      {(isAdmin || isAccountant) && (
                           <td className="px-4 py-3 border-r border-dashed border-gray-200 text-center align-middle">
                             {items.length > 0 ? (
                               <div className="flex flex-col items-center gap-0.5">
                                 <div className="flex items-center justify-center gap-1.5">
-                                  <span className={`font-bold text-sm tabular-nums ${revealed ? (isBelowCost ? 'text-red-600' : 'text-gray-700') : 'text-gray-400 tracking-widest'}`}>
-                                    {revealed ? totalCost.toLocaleString('vi-VN') : '••••••'}
+                                  <span className={`font-bold text-sm tabular-nums ${costUnlocked ? (isBelowCost ? 'text-red-600' : 'text-gray-700') : 'text-gray-400 tracking-widest'}`}>
+                                    {costUnlocked ? totalCost.toLocaleString('vi-VN') : '••••••'}
                                   </span>
                                   <button
-                                    onClick={() => setRevealedCostOrders((prev) => {
-                                      const next = new Set(prev)
-                                      if (revealed) next.delete(order.id)
-                                      else next.add(order.id)
-                                      return next
-                                    })}
-                                    className={`p-0.5 rounded transition-colors flex-shrink-0 ${isBelowCost ? 'text-red-500' : 'text-gray-400 hover:text-blue-500'}`}
-                                    title={revealed ? 'Ẩn giá vốn' : 'Hiện giá vốn'}
+                                    onClick={handleCostEyeClick}
+                                    className={`p-0.5 rounded transition-colors flex-shrink-0 ${costUnlocked ? 'text-blue-500 hover:text-blue-700' : isBelowCost ? 'text-red-500' : 'text-gray-400 hover:text-blue-500'}`}
+                                    title={costUnlocked ? 'Khóa giá vốn' : 'Nhập mật khẩu để xem giá vốn'}
                                   >
-                                    {revealed ? <EyeOff size={13} /> : <Eye size={13} />}
+                                    {costUnlocked ? <Lock size={13} /> : <Eye size={13} />}
                                   </button>
                                 </div>
-                                {(() => {
+                                {costUnlocked && (() => {
                                   const estProfit = order.final_amount - totalCost
                                   const estPct = totalCost > 0 ? (estProfit / totalCost) * 100 : null
                                   const profitColor = estProfit < 0 ? 'text-red-500' : estProfit === 0 ? 'text-gray-400' : 'text-green-600'
@@ -3352,15 +3454,15 @@ export function OrdersPage() {
                                         <span className="text-[9px] text-green-500 font-medium">✓ FIFO</span>
                                       ) : (
                                         <>
-                                          <span className={`text-[10px] font-bold tabular-nums ${revealedProfit ? profitColor : 'text-gray-400 tracking-widest'}`}>
-                                            {revealedProfit ? `LN ${estProfit >= 0 ? '+' : ''}${estProfit.toLocaleString('vi-VN')}` : '••••••'}
+                                          <span className={`text-[10px] font-bold tabular-nums ${profitColor}`}>
+                                            {`LN ${estProfit >= 0 ? '+' : ''}${estProfit.toLocaleString('vi-VN')}`}
                                           </span>
-                                          {revealedProfit && estPct !== null && (
+                                          {estPct !== null && (
                                             <span className={`text-[9px] font-semibold ${profitColor}`}>
                                               {estPct >= 0 ? '+' : ''}{estPct.toFixed(1)}%
                                             </span>
                                           )}
-                                          {revealedProfit && <span className="text-[9px] text-gray-400">~ ước tính</span>}
+                                          <span className="text-[9px] text-gray-400">~ ước tính</span>
                                         </>
                                       )}
                                     </div>
@@ -3371,8 +3473,7 @@ export function OrdersPage() {
                               <span className="text-gray-300 text-sm">—</span>
                             )}
                           </td>
-                        )
-                      })()}
+                      )}
 
                       {/* Col 4: Giá tiền */}
                       <td className="px-4 py-3 border-r border-dashed border-gray-200 text-center align-middle">
@@ -3399,14 +3500,21 @@ export function OrdersPage() {
                         ) : (
                           <StatusBadge status={order.status} block />
                         )}
-                        <p className="text-[11px] text-gray-400 mt-1.5 text-center">{formatDateOnly(order.updated_at)}</p>
+                        <button
+                          onClick={() => setHistoryOrder(order)}
+                          title="Xem lịch sử thay đổi trạng thái"
+                          className="flex items-center gap-1 mx-auto mt-1.5 text-[11px] text-gray-400 hover:text-blue-600 transition-colors"
+                        >
+                          <History size={11} />
+                          {formatDateOnly(order.updated_at)}
+                        </button>
                         <ShippingNoteEditor order={order} canEdit={canEdit} />
                       </td>
 
                       {/* Col 6: Ghi chú nhân viên */}
                       <td className="px-4 py-3">
                         {/* Nguồn đơn + ghi chú đơn */}
-                        {(order.source?.name || order.note) && (
+                        {(order.source?.name || order.note || latestStatusChangeByOrder[order.id]) && (
                           <div className="mb-2 space-y-1">
                             {order.source?.name && (
                               <p className="text-xs text-gray-500">
@@ -3417,6 +3525,12 @@ export function OrdersPage() {
                               <div className="text-xs leading-snug">
                                 <span className="font-semibold text-indigo-600">{order.employee?.full_name ?? 'NV'}:</span>{' '}
                                 <span className="text-gray-700 italic">{order.note}</span>
+                              </div>
+                            )}
+                            {latestStatusChangeByOrder[order.id] && (
+                              <div className="text-xs leading-snug">
+                                <span className="font-semibold text-teal-600">{latestStatusChangeByOrder[order.id].fullName}:</span>{' '}
+                                <span className="text-gray-700">{STATUS_ACTION_LABEL[latestStatusChangeByOrder[order.id].status]}</span>
                               </div>
                             )}
                           </div>
@@ -3471,6 +3585,67 @@ export function OrdersPage() {
         <OrderDetailModal order={viewingOrder} onClose={() => setViewingOrder(null)} />
       )}
 
+      {historyOrder && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setHistoryOrder(null)} />
+          <div className="relative bg-white w-full max-w-lg rounded-t-2xl sm:rounded-xl shadow-2xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0">
+              <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                <History size={17} className="text-blue-500" />
+                Lịch Sử Thay Đổi Trạng Thái
+                <span className="text-xs font-mono text-gray-400 bg-gray-100 px-2 py-0.5 rounded">{historyOrder.order_number}</span>
+              </h2>
+              <button onClick={() => setHistoryOrder(null)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1">
+              {statusHistoryLoading ? (
+                <div className="flex justify-center py-12">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500" />
+                </div>
+              ) : statusHistory.length === 0 ? (
+                <div className="text-center py-12 text-gray-400">
+                  <History size={32} className="mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">Chưa có lịch sử thay đổi trạng thái (chỉ ghi nhận từ khi tính năng này được bật)</p>
+                </div>
+              ) : (
+                <ul className="divide-y divide-gray-100">
+                  {statusHistory.map((h) => {
+                    const oldLabel = STATUS_OPTIONS.find((s) => s.value === h.old_status)?.label ?? h.old_status ?? '—'
+                    const newLabel = STATUS_OPTIONS.find((s) => s.value === h.new_status)?.label ?? h.new_status
+                    return (
+                      <li key={h.id} className="px-5 py-3 text-sm">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-gray-500 bg-gray-100 px-2 py-0.5 rounded text-xs">{oldLabel}</span>
+                          <span className="text-gray-400">→</span>
+                          <span className="text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-xs font-medium">{newLabel}</span>
+                        </div>
+                        <div className="mt-1 text-xs text-gray-500">
+                          Bởi <span className="font-medium text-gray-700">{h.profile?.full_name ?? 'Không rõ'}</span>
+                          {' · '}
+                          {formatDate(h.changed_at)}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+
+            <div className="px-5 py-4 border-t bg-gray-50 flex justify-end flex-shrink-0">
+              <button
+                onClick={() => setHistoryOrder(null)}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-100 transition-colors"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {exportingOrder && (
         <ExportOrderModal order={exportingOrder} onClose={() => setExportingOrder(null)} onDone={() => setExportingOrder(null)} />
       )}
@@ -3508,6 +3683,41 @@ export function OrdersPage() {
         title="Xóa Đơn Hàng" message="Bạn có chắc muốn xóa đơn hàng này? Hành động này không thể hoàn tác."
         confirmLabel="Xóa" loading={deleteMutation.isPending}
       />
+
+      {/* Password modal for cost price */}
+      {showCostPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setShowCostPasswordModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full border border-gray-100" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-4">
+              <Lock size={18} className="text-blue-600" />
+              <p className="font-bold text-gray-900 text-base">Xem Giá Vốn</p>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">Nhập mật khẩu đăng nhập của bạn để xem giá vốn.</p>
+            <input
+              type="password"
+              value={costPasswordInput}
+              onChange={(e) => { setCostPasswordInput(e.target.value); setCostPasswordError(false) }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !costVerifying) handleCostPasswordSubmit() }}
+              placeholder="Mật khẩu đăng nhập..."
+              autoFocus
+              disabled={costVerifying}
+              className={`w-full px-4 py-2.5 border rounded-lg text-sm outline-none focus:ring-2 ${costPasswordError ? 'border-red-400 focus:ring-red-400' : 'border-gray-300 focus:ring-blue-500'}`}
+            />
+            {costPasswordError && (
+              <p className="text-xs text-red-500 mt-1.5">Mật khẩu không đúng. Vui lòng thử lại.</p>
+            )}
+            <div className="flex gap-2 mt-4 justify-end">
+              <button onClick={() => setShowCostPasswordModal(false)} disabled={costVerifying}
+                className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">Hủy</button>
+              <button
+                onClick={handleCostPasswordSubmit}
+                disabled={!costPasswordInput.trim() || costVerifying}
+                className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg font-medium"
+              >{costVerifying ? 'Đang xác thực...' : 'Xác nhận'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )
