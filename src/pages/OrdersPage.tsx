@@ -2898,12 +2898,13 @@ export function OrdersPage() {
       const oldStatus = orders.find((o) => o.id === id)?.status ?? null
       const { error } = await supabase.from('orders').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
       if (error) throw error
-      await supabase.from('order_status_history').insert({
+      const { error: historyError } = await supabase.from('order_status_history').insert({
         order_id: id,
         old_status: oldStatus,
         new_status: status,
         changed_by: profile?.id ?? null,
       })
+      if (historyError) console.error('Không thể ghi lịch sử trạng thái:', historyError)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] })
@@ -2914,29 +2915,6 @@ export function OrdersPage() {
       toast.success('Cập nhật trạng thái thành công')
     },
     onError: (e: Error) => toast.error(e.message || 'Không thể cập nhật trạng thái'),
-  })
-
-  // Lấy lần đổi trạng thái gần nhất cho các đơn đang hiển thị, để show "Tên: Hành động" ở mục ghi chú
-  const visibleOrderIds = useMemo(() => filtered.map((o) => o.id), [filtered])
-  const { data: latestStatusChangeByOrder = {} } = useQuery({
-    queryKey: ['order-status-history-latest', visibleOrderIds],
-    queryFn: async () => {
-      if (visibleOrderIds.length === 0) return {}
-      const { data, error } = await supabase
-        .from('order_status_history')
-        .select('order_id, new_status, changed_at, profile:profiles(full_name)')
-        .in('order_id', visibleOrderIds)
-        .order('changed_at', { ascending: false })
-      if (error) throw error
-      const map: Record<string, { fullName: string; status: OrderStatus }> = {}
-      for (const row of (data ?? []) as unknown as { order_id: string; new_status: OrderStatus; profile: { full_name: string } | null }[]) {
-        if (!map[row.order_id]) {
-          map[row.order_id] = { fullName: row.profile?.full_name ?? 'NV', status: row.new_status }
-        }
-      }
-      return map
-    },
-    enabled: visibleOrderIds.length > 0,
   })
 
   const { data: statusHistory = [], isLoading: statusHistoryLoading } = useQuery({
@@ -2988,6 +2966,29 @@ export function OrdersPage() {
     const matchEmployee = employeeFilter === 'all' || o.employee_id === employeeFilter
     return matchSearch && matchStatus && matchMonth && matchEmployee
   }), [orders, search, statusFilters, monthFilter, employeeFilter])
+
+  // Lấy lần đổi trạng thái gần nhất cho các đơn đang hiển thị, để show "Tên: Hành động" ở mục ghi chú
+  const visibleOrderIds = useMemo(() => filtered.map((o) => o.id), [filtered])
+  const { data: latestStatusChangeByOrder = {} } = useQuery({
+    queryKey: ['order-status-history-latest', visibleOrderIds],
+    queryFn: async () => {
+      if (visibleOrderIds.length === 0) return {}
+      const { data, error } = await supabase
+        .from('order_status_history')
+        .select('order_id, new_status, changed_at, profile:profiles(full_name)')
+        .in('order_id', visibleOrderIds)
+        .order('changed_at', { ascending: false })
+      if (error) throw error
+      const map: Record<string, { fullName: string; status: OrderStatus }> = {}
+      for (const row of (data ?? []) as unknown as { order_id: string; new_status: OrderStatus; profile: { full_name: string } | null }[]) {
+        if (!map[row.order_id]) {
+          map[row.order_id] = { fullName: row.profile?.full_name ?? 'NV', status: row.new_status }
+        }
+      }
+      return map
+    },
+    enabled: visibleOrderIds.length > 0,
+  })
 
   const baseFiltered = useMemo(() => orders.filter((o) => {
     const q = search.toLowerCase()
