@@ -46,6 +46,8 @@ export function SuppliersPage() {
   const [payNote, setPayNote] = useState('')
   const [payDate, setPayDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [deletePayId, setDeletePayId] = useState<string | null>(null)
+  const [historyFrom, setHistoryFrom] = useState('')
+  const [historyTo, setHistoryTo] = useState('')
 
   // ── Opening balance state ──
   const [editingOpeningBalance, setEditingOpeningBalance] = useState(false)
@@ -262,7 +264,12 @@ export function SuppliersPage() {
   // Debt modal computed data
   const debtInfo = debtSupplier ? getDebtInfo(debtSupplier) : null
   const supplierPaymentHistory = debtSupplier
-    ? payments.filter((p) => p.supplier_id === debtSupplier.id)
+    ? payments.filter((p) => {
+        if (p.supplier_id !== debtSupplier.id) return false
+        if (historyFrom && p.payment_date < historyFrom) return false
+        if (historyTo && p.payment_date > historyTo) return false
+        return true
+      })
     : []
 
   return (
@@ -484,7 +491,7 @@ export function SuppliersPage() {
                   </p>
                 )}
               </div>
-              <button onClick={() => { setDebtSupplier(null); setEditingOpeningBalance(false); setOpeningBalanceInput('') }} className="p-1.5 hover:bg-gray-100 rounded-lg">
+              <button onClick={() => { setDebtSupplier(null); setEditingOpeningBalance(false); setOpeningBalanceInput(''); setHistoryFrom(''); setHistoryTo('') }} className="p-1.5 hover:bg-gray-100 rounded-lg">
                 <X size={18} />
               </button>
             </div>
@@ -666,10 +673,41 @@ export function SuppliersPage() {
                     <span className="text-xs text-gray-400 font-normal">({supplierPaymentHistory.length} lần)</span>
                   )}
                 </p>
+                <div className="flex flex-wrap items-end gap-2 mb-3">
+                  <div>
+                    <label className="block text-[11px] text-gray-500 mb-1">Từ ngày</label>
+                    <input
+                      type="date"
+                      value={historyFrom}
+                      onChange={(e) => setHistoryFrom(e.target.value)}
+                      max={historyTo || undefined}
+                      className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-gray-500 mb-1">Đến ngày</label>
+                    <input
+                      type="date"
+                      value={historyTo}
+                      onChange={(e) => setHistoryTo(e.target.value)}
+                      min={historyFrom || undefined}
+                      className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                    />
+                  </div>
+                  {(historyFrom || historyTo) && (
+                    <button
+                      type="button"
+                      onClick={() => { setHistoryFrom(''); setHistoryTo('') }}
+                      className="text-xs text-blue-600 hover:underline pb-1.5"
+                    >
+                      Xóa lọc
+                    </button>
+                  )}
+                </div>
                 {supplierPaymentHistory.length === 0 ? (
                   <div className="text-center py-8 text-gray-400 border border-dashed border-gray-200 rounded-xl">
                     <DollarSign size={28} className="mx-auto mb-1 opacity-30" />
-                    <p className="text-sm">Chưa có lần thanh toán nào</p>
+                    <p className="text-sm">{historyFrom || historyTo ? 'Không có thanh toán nào trong khoảng ngày đã chọn' : 'Chưa có lần thanh toán nào'}</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -705,7 +743,7 @@ export function SuppliersPage() {
             {/* Footer */}
             <div className="px-5 py-4 border-t bg-gray-50 flex justify-end flex-shrink-0 rounded-b-xl">
               <button
-                onClick={() => { setDebtSupplier(null); setEditingOpeningBalance(false); setOpeningBalanceInput('') }}
+                onClick={() => { setDebtSupplier(null); setEditingOpeningBalance(false); setOpeningBalanceInput(''); setHistoryFrom(''); setHistoryTo('') }}
                 className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-100 transition-colors"
               >
                 Đóng
