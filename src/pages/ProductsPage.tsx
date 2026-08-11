@@ -4,7 +4,7 @@ import {
   Plus, Pencil, Trash2, Package, Barcode, Search, ScanLine,
   ImageIcon, Printer, RefreshCw, Tag, Upload, Download,
   ChevronDown, FileText, Settings, HelpCircle, AlignJustify, Truck,
-  Eye, EyeOff,
+  Eye, EyeOff, Star,
 } from 'lucide-react'
 import JsBarcode from 'jsbarcode'
 import { supabase } from '@/lib/supabase'
@@ -673,6 +673,17 @@ const { data: bundles = [] } = useQuery({
     onError: () => toast.error('Không thể thực hiện'),
   })
 
+  const favoriteMutation = useMutation({
+    mutationFn: async ({ id, favorite }: { id: string; favorite: boolean }) => {
+      const { error } = await supabase.from('products').update({ is_favorite: favorite }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+    },
+    onError: () => toast.error('Không thể thực hiện'),
+  })
+
   function openAdd() {
     setEditingProduct(null)
     setIsModalOpen(true)
@@ -706,6 +717,13 @@ const { data: bundles = [] } = useQuery({
       : stockFilter === 'out_of_stock' ? p.quantity === 0
       : p.quantity > 0 && p.quantity <= LOW_STOCK_THRESHOLD
     return matchCat && matchSearch && matchStock
+  }).sort((a, b) => {
+    const favA = a.is_favorite ? 1 : 0
+    const favB = b.is_favorite ? 1 : 0
+    if (favA !== favB) return favB - favA
+    const stockA = a.quantity > 0 ? 1 : 0
+    const stockB = b.quantity > 0 ? 1 : 0
+    return stockB - stockA
   })
 
   const hiddenProducts = products.filter((p) => p.is_hidden)
@@ -1365,7 +1383,7 @@ const { data: bundles = [] } = useQuery({
                 <table className="w-full min-w-[900px] text-sm">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="px-2 py-3 w-8"></th>
+                      <th className="px-2 py-3 w-16"></th>
                       <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3 w-12">Ảnh</th>
                       <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3" style={{ minWidth: 90 }}>Mã hàng</th>
                       <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-3" style={{ minWidth: 220 }}>Tên hàng</th>
@@ -1419,7 +1437,14 @@ const { data: bundles = [] } = useQuery({
                       return (
                         <tr key={product.id} className="hover:bg-gray-50 transition-colors">
                           <td className="px-2 py-3">
-                            <div className="flex items-center justify-center">
+                            <div className="flex items-center justify-center gap-0.5">
+                              <button
+                                onClick={() => favoriteMutation.mutate({ id: product.id, favorite: !product.is_favorite })}
+                                className={`p-0.5 rounded transition-colors ${product.is_favorite ? 'text-yellow-400 hover:text-yellow-500' : 'text-gray-300 hover:text-yellow-400'}`}
+                                title={product.is_favorite ? 'Bỏ yêu thích' : 'Đánh dấu yêu thích'}
+                              >
+                                <Star size={14} fill={product.is_favorite ? 'currentColor' : 'none'} />
+                              </button>
                               <button
                                 onClick={() => { setViewProduct(product); setViewImgIdx(0) }}
                                 className="p-0.5 text-gray-300 hover:text-teal-600 rounded"

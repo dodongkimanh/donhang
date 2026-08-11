@@ -582,7 +582,11 @@ create policy "orders_update"
   on public.orders for update
   using (
     get_user_role() in ('admin', 'accountant', 'warehouse')
-    or employee_id = get_profile_id()
+    or (employee_id = get_profile_id() and status in ('draft', 'placed'))
+  )
+  with check (
+    get_user_role() in ('admin', 'accountant', 'warehouse')
+    or (employee_id = get_profile_id() and status in ('draft', 'placed', 'cancelled'))
   );
 
 create policy "orders_delete"

@@ -48,7 +48,7 @@ src/
     └── imageUpload.ts
 ```
 
-### Database Schema (supabase_schema.sql)
+### Database Schema (supabase_schema_full.sql)
 
 Key tables: `profiles` (roles: admin/accountant/employee), `categories`, `suppliers`, `products`, `product_suppliers` (per-supplier cost/barcode/stock), `inventory_transactions`, `customers`, `orders`, `order_items`, `order_sources`, `attendance`, `return_tickets`, `routes`, `route_orders`, `stock_calls`, `supplier_payments`.
 

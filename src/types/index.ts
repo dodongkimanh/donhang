@@ -62,6 +62,7 @@ export interface Product {
   image_url?: string
   images?: string[]
   is_hidden?: boolean
+  is_favorite?: boolean
   created_at: string
   updated_at: string
   category?: Category

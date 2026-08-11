@@ -41,6 +41,15 @@ function escHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+// Shrinks the name font as it gets longer so more (ideally all) of it fits on the 2 visible lines
+function nameFontSizeFor(name: string, base: number): number {
+  const len = name.length
+  if (len <= 16) return base
+  if (len <= 24) return base - 1
+  if (len <= 34) return base - 2
+  return Math.max(base - 3, 3.2)
+}
+
 interface LabelSize {
   label: string
   w: number
@@ -119,9 +128,11 @@ function buildSharedCSS(size: LabelSize): string {
       text-align: center;
       max-width: 100%;
       overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      line-height: 1.2;
+      line-height: 1.15;
+      word-break: break-word;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
     }
     .codes {
       font-size: ${size.codeFontPt}pt;
@@ -147,9 +158,10 @@ function buildSharedCSS(size: LabelSize): string {
 
 function buildLabelsHTML(product: Product, barcode: string, copies: number, size: LabelSize): string {
   const barcodeSVG = buildBarcodeSVG(barcode, size.barcodeH, size.barcodeBarWidth)
+  const nameFontPt = nameFontSizeFor(product.name, size.nameFontPt)
   const singleLabel = `
     <div class="label">
-      <div class="name">${escHtml(product.name)}</div>
+      <div class="name" style="font-size:${nameFontPt}pt">${escHtml(product.name)}</div>
       <div class="codes">
         <span class="product-code">Mã: <strong>${escHtml(product.product_code)}</strong></span>
       </div>
@@ -364,7 +376,17 @@ export function PrintLabelModal({ product, onClose }: Props) {
                   className="border-2 border-dashed border-gray-300 bg-white rounded shadow-sm flex flex-col items-center justify-between overflow-hidden flex-shrink-0"
                   style={{ width: size.pageW * px, height: size.pageH * px, padding: `${1.5 * px}px ${2 * px}px` }}
                 >
-                  <p className="font-bold text-center leading-tight overflow-hidden" style={{ fontSize: size.nameFontPt * px * 0.6, maxWidth: '100%' }}>
+                  <p
+                    className="font-bold text-center leading-tight overflow-hidden"
+                    style={{
+                      fontSize: nameFontSizeFor(product.name, size.nameFontPt) * px * 0.6,
+                      maxWidth: '100%',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      wordBreak: 'break-word',
+                    }}
+                  >
                     {product.name}
                   </p>
                   <p className="text-gray-500" style={{ fontSize: size.codeFontPt * px * 0.6 }}>
@@ -388,7 +410,16 @@ export function PrintLabelModal({ product, onClose }: Props) {
                         borderRight: i < size.perRow - 1 ? '1px dashed #d1d5db' : 'none',
                       }}
                     >
-                      <p className="font-bold text-center leading-tight overflow-hidden truncate w-full" style={{ fontSize: size.nameFontPt * px * 0.6 }}>
+                      <p
+                        className="font-bold text-center leading-tight overflow-hidden w-full"
+                        style={{
+                          fontSize: nameFontSizeFor(product.name, size.nameFontPt) * px * 0.6,
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          wordBreak: 'break-word',
+                        }}
+                      >
                         {product.name}
                       </p>
                       <p className="text-gray-500" style={{ fontSize: size.codeFontPt * px * 0.6 }}>

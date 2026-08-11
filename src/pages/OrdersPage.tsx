@@ -149,6 +149,12 @@ const ALL_ADMIN_STATUSES: OrderStatus[] = [
   'returned', 'returned_received', 'partial_return', 'cancelled',
 ]
 
+// Sale chỉ được tự đặt/hủy đơn nháp của mình — KHÔNG được tự xác nhận đơn (phải do admin/kế toán/kho xác nhận)
+const EMPLOYEE_ALLOWED_TRANSITIONS: Partial<Record<OrderStatus, OrderStatus[]>> = {
+  draft:  ['placed', 'cancelled'],
+  placed: ['cancelled'],
+}
+
 // Chuẩn hóa SĐT: bỏ đầu 0 hoặc 84, lấy 9 số cuối
 function normalizePhone(phone: string): string {
   const d = phone.replace(/\D/g, '')
@@ -159,16 +165,18 @@ function normalizePhone(phone: string): string {
 
 // ── Inline Status Select ──────────────────────────────────────────────────────
 
-function StatusSelect({ order, onUpdate, isAdmin = false }: { order: Order; onUpdate: (id: string, s: OrderStatus) => void; isAdmin?: boolean }) {
+function StatusSelect({ order, onUpdate, isAdmin = false, isEmployee = false }: { order: Order; onUpdate: (id: string, s: OrderStatus) => void; isAdmin?: boolean; isEmployee?: boolean }) {
   const cfg = ORDER_STATUS_CONFIG[order.status] ?? ORDER_STATUS_CONFIG['placed']
-  const allowed = ALLOWED_TRANSITIONS[order.status] ?? []
+  const allowed = isEmployee
+    ? EMPLOYEE_ALLOWED_TRANSITIONS[order.status] ?? []
+    : ALLOWED_TRANSITIONS[order.status] ?? []
 
   // Admin: thấy tất cả trạng thái; non-admin: chỉ trạng thái được phép
   const visibleOptions = isAdmin
     ? STATUS_OPTIONS.filter((o) => o.value === order.status || ALL_ADMIN_STATUSES.includes(o.value))
     : STATUS_OPTIONS.filter((o) => o.value === order.status || allowed.includes(o.value))
 
-  // Non-admin ở trạng thái terminal → chỉ hiển thị badge
+  // Non-admin ở trạng thái terminal (hoặc sale hết quyền chuyển) → chỉ hiển thị badge
   if (!isAdmin && allowed.length === 0) {
     return <StatusBadge status={order.status} />
   }
@@ -2896,6 +2904,9 @@ export function OrdersPage() {
   const updateStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: OrderStatus }) => {
       const oldStatus = orders.find((o) => o.id === id)?.status ?? null
+      if (isEmployee && !(EMPLOYEE_ALLOWED_TRANSITIONS[oldStatus as OrderStatus] ?? []).includes(status)) {
+        throw new Error('Bạn không có quyền chuyển đơn sang trạng thái này')
+      }
       const { error } = await supabase.from('orders').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
       if (error) throw error
       const { error: historyError } = await supabase.from('order_status_history').insert({
@@ -3497,7 +3508,7 @@ export function OrdersPage() {
                       {/* Col 5: Trạng thái */}
                       <td className="px-4 py-3 border-r border-dashed border-gray-200">
                         {canEdit || (isEmployee && (order.status === 'draft' || order.status === 'placed')) ? (
-                          <StatusSelect order={order} isAdmin={isAdmin} onUpdate={(id, s) => updateStatusMutation.mutate({ id, status: s })} />
+                          <StatusSelect order={order} isAdmin={isAdmin} isEmployee={isEmployee} onUpdate={(id, s) => updateStatusMutation.mutate({ id, status: s })} />
                         ) : (
                           <StatusBadge status={order.status} block />
                         )}
