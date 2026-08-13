@@ -14,7 +14,7 @@ import { VietnamAddressSelect } from '@/components/ui/VietnamAddressSelect'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { StatusBadge, ORDER_STATUS_CONFIG } from '@/components/ui/StatusBadge'
 import { formatCurrency, formatDate, formatDateOnly, fmtThousands } from '@/utils/format'
-import type { Order, OrderNote, OrderStatus, OrderSource, Product, Customer, OrderItem, ProductSupplier, InventoryTransaction, ReturnTicketItem, ProductBundle, Profile, OrderStatusHistory } from '@/types'
+import type { Order, OrderNote, OrderStatus, OrderSource, Product, Customer, OrderItem, ProductSupplier, InventoryTransaction, ReturnTicketItem, ReturnTicket, ProductBundle, Profile, OrderStatusHistory } from '@/types'
 import { useRoutePlanningStore } from '@/stores/routePlanningStore'
 import toast from 'react-hot-toast'
 
@@ -738,6 +738,87 @@ function ReturnTicketModal({
             {saving ? 'Đang lưu...' : 'Tạo phiếu đổi trả'}
           </button>
         </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ── Return Ticket Detail Modal ──────────────────────────────────────────────
+function ReturnTicketDetailModal({
+  ticket, orderNumber, onClose,
+}: { ticket: ReturnTicket; orderNumber: string; onClose: () => void }) {
+  const balance = ticket.exchange_amount - ticket.returned_amount + ticket.customer_paid
+
+  return (
+    <Modal isOpen onClose={onClose} title={`Phiếu Đổi Trả ${ticket.ticket_number} — ${orderNumber}`} size="lg">
+      <div className="space-y-4">
+        <p className="text-xs text-gray-400">Tạo lúc {formatDate(ticket.created_at)}</p>
+
+        {ticket.returned_items.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-red-500 mb-1">Hàng trả về</p>
+            <div className="border border-gray-200 rounded-lg divide-y">
+              {ticket.returned_items.map((it, i) => (
+                <div key={i} className="flex justify-between px-3 py-1.5 text-sm">
+                  <span>{it.name} <span className="text-gray-400">x{it.quantity}</span></span>
+                  <span className="tabular-nums">{formatCurrency(it.unit_price * it.quantity)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-between text-xs text-gray-500 mt-1 px-1">
+              <span>Tổng trả về</span>
+              <span className="font-medium">{formatCurrency(ticket.returned_amount)}</span>
+            </div>
+          </div>
+        )}
+
+        {ticket.exchange_items.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-blue-600 mb-1">
+              Hàng đổi mới {ticket.exchange_exported ? <span className="text-green-600">(✓ đã xuất kho)</span> : <span className="text-amber-500">(chưa xuất kho)</span>}
+            </p>
+            <div className="border border-gray-200 rounded-lg divide-y">
+              {ticket.exchange_items.map((it, i) => (
+                <div key={i} className="flex justify-between px-3 py-1.5 text-sm">
+                  <span>{it.name} <span className="text-gray-400">x{it.quantity}</span></span>
+                  <span className="tabular-nums">{formatCurrency(it.unit_price * it.quantity)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-between text-xs text-gray-500 mt-1 px-1">
+              <span>Tổng hàng đổi mới</span>
+              <span className="font-medium">{formatCurrency(ticket.exchange_amount)}</span>
+            </div>
+          </div>
+        )}
+
+        <div className="bg-gray-50 rounded-lg p-3 space-y-1 text-sm">
+          <div className="flex justify-between text-gray-500">
+            <span>Khách đã trả:</span>
+            <span className="font-medium text-green-600">{formatCurrency(ticket.customer_paid)}</span>
+          </div>
+          <div className={`flex justify-between font-semibold pt-1 border-t border-gray-200 ${balance > 0 ? 'text-orange-600' : balance < 0 ? 'text-green-700' : 'text-gray-500'}`}>
+            <span>{balance > 0 ? 'Khách còn nợ:' : balance < 0 ? 'Hoàn tiền khách:' : 'Đã thanh toán đủ'}</span>
+            <span>{balance !== 0 ? formatCurrency(Math.abs(balance)) : '✓'}</span>
+          </div>
+        </div>
+
+        {(ticket.reason || ticket.note) && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            {ticket.reason && (
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-0.5">Lý do đổi trả</p>
+                <p className="text-gray-800">{ticket.reason}</p>
+              </div>
+            )}
+            {ticket.note && (
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-0.5">Ghi chú</p>
+                <p className="text-gray-800">{ticket.note}</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </Modal>
   )
@@ -2742,6 +2823,7 @@ export function OrdersPage() {
   const [revertingOrder, setRevertingOrder] = useState<Order | null>(null)
   const [returningOrder, setReturningOrder] = useState<Order | null>(null)
   const [exportReturnInfo, setExportReturnInfo] = useState<ExportReturnInfo | null>(null)
+  const [viewingTicket, setViewingTicket] = useState<{ ticket: ReturnTicket; orderNumber: string } | null>(null)
 
   const canEdit = isAdmin || isAccountant || isWarehouse
   const navigate = useNavigate()
@@ -3296,12 +3378,19 @@ export function OrdersPage() {
                               const exported = rt.exchange_exported
                               return (
                                 <div key={rt.id}>
-                                  <div className="flex items-center gap-1 text-[10px] text-orange-600 font-mono bg-orange-50 rounded px-1.5 py-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setViewingTicket({ ticket: rt, orderNumber: order.order_number })
+                                    }}
+                                    className="flex items-center gap-1 text-[10px] text-orange-600 font-mono bg-orange-50 hover:bg-orange-100 rounded px-1.5 py-0.5 transition-colors"
+                                  >
                                     <Receipt size={9} />
-                                    <span className="font-semibold">{rt.ticket_number}</span>
+                                    <span className="font-semibold underline decoration-dotted">{rt.ticket_number}</span>
                                     {rt.returned_items.length > 0 && <span className="text-red-400">↩ trả {rt.returned_items.length} sp</span>}
                                     {hasExchange && exported && <span className="text-green-600">✓ đã xuất {rt.exchange_items.length} sp</span>}
-                                  </div>
+                                  </button>
                                   {hasExchange && !exported && (
                                     <button
                                       onClick={(e) => {
@@ -3687,6 +3776,14 @@ export function OrdersPage() {
         <ExportReturnModal
           info={exportReturnInfo}
           onClose={() => setExportReturnInfo(null)}
+        />
+      )}
+
+      {viewingTicket && (
+        <ReturnTicketDetailModal
+          ticket={viewingTicket.ticket}
+          orderNumber={viewingTicket.orderNumber}
+          onClose={() => setViewingTicket(null)}
         />
       )}
 
