@@ -72,22 +72,6 @@ export function InventoryPage() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   })
 
-  function setThisMonth() {
-    const d = new Date()
-    setDateFrom(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`)
-    setDateTo(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)
-  }
-
-  function setLastMonth() {
-    const d = new Date()
-    d.setDate(0) // last day of previous month
-    const end = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    d.setDate(1) // first day of that month
-    const start = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
-    setDateFrom(start)
-    setDateTo(end)
-  }
-
   // Quick month picker: jump straight to a full calendar month (year, month 1-12)
   const currentYear = new Date().getFullYear()
   function setMonth(year: number, month: number) {
@@ -1169,18 +1153,6 @@ export function InventoryPage() {
 
       {/* Date + supplier filter */}
       <div className="flex items-center gap-2 flex-wrap mb-3">
-        <button
-          onClick={setThisMonth}
-          className="px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors"
-        >
-          Tháng này
-        </button>
-        <button
-          onClick={setLastMonth}
-          className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
-        >
-          Tháng trước
-        </button>
         <div className="flex items-center gap-1.5 bg-white border border-gray-300 rounded-lg px-2 py-1.5 flex-wrap">
           <Calendar size={14} className="text-gray-400 flex-shrink-0" />
           <input
