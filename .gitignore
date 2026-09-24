@@ -35,3 +35,6 @@ pnpm-debug.log*
 
 # TWA Android build output (contains private signing key)
 android-twa/
+
+# Claude Code local settings (personal, not shared)
+.claude/settings.local.json

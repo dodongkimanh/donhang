@@ -87,6 +87,25 @@ export function InventoryPage() {
     setDateFrom(start)
     setDateTo(end)
   }
+
+  // Quick month picker: jump straight to a full calendar month (year, month 1-12)
+  const currentYear = new Date().getFullYear()
+  function setMonth(year: number, month: number) {
+    const start = `${year}-${String(month).padStart(2, '0')}-01`
+    const lastDay = new Date(year, month, 0).getDate()
+    const end = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+    setDateFrom(start)
+    setDateTo(end)
+  }
+  // Detect which month the current range corresponds to (for the dropdown's selected value)
+  const selectedMonthValue = (() => {
+    const [fy, fm, fd] = dateFrom.split('-').map(Number)
+    if (fd !== 1) return ''
+    const lastDay = new Date(fy, fm, 0).getDate()
+    const expectedEnd = `${fy}-${String(fm).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+    if (dateTo !== expectedEnd) return ''
+    return `${fy}-${fm}`
+  })()
   const [printProductId, setPrintProductId] = useState<string | null>(null)
   const [printBatchKey, setPrintBatchKey] = useState<string | null>(null)
   const [isAdjustOpen, setIsAdjustOpen] = useState(false)
@@ -124,6 +143,9 @@ export function InventoryPage() {
       return (data ?? []) as Product[]
     },
   })
+
+  // Tổng giá vốn hàng đang tồn kho (theo tất cả sản phẩm, không phụ thuộc khoảng ngày)
+  const totalStockValue = products.reduce((sum, p) => sum + (p.quantity ?? 0) * (p.cost_price ?? 0), 0)
 
   // All suppliers
   const { data: suppliers = [] } = useQuery({
@@ -1175,6 +1197,20 @@ export function InventoryPage() {
             className="text-sm outline-none text-gray-700 bg-transparent"
           />
         </div>
+        <select
+          value={selectedMonthValue}
+          onChange={(e) => {
+            if (!e.target.value) return
+            const [y, m] = e.target.value.split('-').map(Number)
+            setMonth(y, m)
+          }}
+          className="text-sm outline-none text-gray-700 bg-white border border-gray-300 rounded-lg px-2.5 py-1.5"
+        >
+          <option value="">Xem nhanh theo tháng</option>
+          {Array.from({ length: 12 }, (_, i) => 12 - i).map((m) => (
+            <option key={m} value={`${currentYear}-${m}`}>Tháng {m}</option>
+          ))}
+        </select>
         <div className="flex items-center gap-1.5 bg-white border border-gray-300 rounded-lg px-2 py-1.5">
           <Truck size={14} className="text-gray-400 flex-shrink-0" />
           <select
@@ -1206,7 +1242,15 @@ export function InventoryPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-center justify-between">
+          <div>
+            <p className="text-xs text-blue-600 font-medium uppercase tracking-wide">Tổng Giá Vốn Tồn Kho</p>
+            <p className="text-xl font-bold text-blue-700 mt-0.5">{formatCurrency(totalStockValue)}</p>
+            <p className="text-xs text-blue-500 mt-0.5">{products.filter((p) => (p.quantity ?? 0) > 0).length} sản phẩm còn hàng</p>
+          </div>
+          <List size={36} className="text-blue-200 flex-shrink-0" />
+        </div>
         <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-center justify-between">
           <div>
             <p className="text-xs text-green-600 font-medium uppercase tracking-wide">Tổng Nhập Kho</p>
