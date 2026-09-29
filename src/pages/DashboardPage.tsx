@@ -141,11 +141,16 @@ export function DashboardPage() {
   })
 
   const { data: customerCount = 0 } = useQuery({
-    queryKey: ['dashboard-customers'],
+    queryKey: ['dashboard-customers', profile?.id, isEmployee],
     queryFn: async () => {
-      const { count } = await supabase.from('customers').select('*', { count: 'exact', head: true })
+      let query = supabase.from('customers').select('*', { count: 'exact', head: true })
+      if (isEmployee && profile) {
+        query = query.eq('created_by', profile.id)
+      }
+      const { count } = await query
       return count ?? 0
     },
+    enabled: !!profile,
   })
 
   // ── All orders for charts ────────────────────────────────────────────────
