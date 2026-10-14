@@ -869,6 +869,10 @@ function CreateOrderModal({
       toast.error('Vui lòng nhấn Lưu để lưu thông tin khách hàng trước khi tạo đơn')
       return
     }
+    if (!form.source_id) {
+      toast.error('Vui lòng chọn nguồn đơn')
+      return
+    }
     saveMutation.mutate()
   }
 
@@ -1323,7 +1327,7 @@ function CreateOrderModal({
               {/* Nguồn đơn */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-sm font-medium text-gray-700">Nguồn Đơn</label>
+                  <label className="text-sm font-medium text-gray-700">Nguồn Đơn <span className="text-red-500">*</span></label>
                   {isAdmin && (
                     <button type="button" onClick={() => setIsManageSrcOpen(true)}
                       title="Quản lý nguồn đơn"
@@ -1642,7 +1646,7 @@ function CreateOrderModal({
               className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Hủy</button>
             <button
               onClick={handleSave}
-              disabled={saveMutation.isPending || form.items.length === 0}
+              disabled={saveMutation.isPending || form.items.length === 0 || !form.source_id}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg text-sm font-medium"
             >
               {saveMutation.isPending ? 'Đang lưu...' : editingOrder ? 'Lưu Đơn' : isEmployee ? 'Lưu Nháp' : 'Lưu Đơn'}
