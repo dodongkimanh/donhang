@@ -171,13 +171,21 @@ export function DashboardPage() {
   })
 
   // ── All order items for "hàng hóa bán chạy" report (admin / kế toán) ────
+  // Lọc theo đúng tháng đang xem ngay từ server — tránh bị cắt bớt dữ liệu bởi
+  // giới hạn PGRST_DB_MAX_ROWS (1000 dòng/lần) khi order_items vượt quá con số đó.
+
+  const monthStart = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-01`
+  const monthEndDate = new Date(selectedYear, selectedMonth + 1, 1)
+  const monthEnd = `${monthEndDate.getFullYear()}-${String(monthEndDate.getMonth() + 1).padStart(2, '0')}-01`
 
   const { data: allOrderItems = [] } = useQuery({
-    queryKey: ['dashboard-all-order-items'],
+    queryKey: ['dashboard-all-order-items', selectedYear, selectedMonth],
     queryFn: async () => {
       const { data } = await supabase
         .from('order_items')
-        .select('id, product_id, quantity, subtotal, cost_price, order:orders(status, created_at), product:products(name, unit, cost_price)')
+        .select('id, product_id, quantity, subtotal, cost_price, order:orders!inner(status, created_at), product:products(name, unit, cost_price)')
+        .gte('order.created_at', monthStart)
+        .lt('order.created_at', monthEnd)
       return (data ?? []) as RawOrderItem[]
     },
     enabled: !!profile && isPrivileged,
