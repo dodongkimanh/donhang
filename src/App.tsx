@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
@@ -5,18 +6,29 @@ import { useAuth, useAuthInit } from '@/hooks/useAuth'
 import { LoginPage } from '@/components/auth/LoginPage'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { AppLayout } from '@/components/layout/AppLayout'
-import { DashboardPage } from '@/pages/DashboardPage'
-import { CategoriesPage } from '@/pages/CategoriesPage'
-import { ProductsPage } from '@/pages/ProductsPage'
-import { InventoryPage } from '@/pages/InventoryPage'
-import { OrdersPage } from '@/pages/OrdersPage'
-import { CustomersPage } from '@/pages/CustomersPage'
-import { EmployeesPage } from '@/pages/EmployeesPage'
-import { SuppliersPage } from '@/pages/SuppliersPage'
-import { RoutePlanningPage } from '@/pages/RoutePlanningPage'
-import { StockCallPage } from '@/pages/StockCallPage'
-import { BarcodeTrackerPage } from '@/pages/BarcodeTrackerPage'
 import PWAUpdatePrompt from '@/components/ui/PWAUpdatePrompt'
+
+// Mỗi trang tách thành 1 chunk riêng — chỉ tải khi người dùng thực sự vào trang đó,
+// thay vì gộp chung vào 1 file JS khổng lồ phải tải hết trước khi app chạy được.
+const DashboardPage = lazy(() => import('@/pages/DashboardPage').then((m) => ({ default: m.DashboardPage })))
+const CategoriesPage = lazy(() => import('@/pages/CategoriesPage').then((m) => ({ default: m.CategoriesPage })))
+const ProductsPage = lazy(() => import('@/pages/ProductsPage').then((m) => ({ default: m.ProductsPage })))
+const InventoryPage = lazy(() => import('@/pages/InventoryPage').then((m) => ({ default: m.InventoryPage })))
+const OrdersPage = lazy(() => import('@/pages/OrdersPage').then((m) => ({ default: m.OrdersPage })))
+const CustomersPage = lazy(() => import('@/pages/CustomersPage').then((m) => ({ default: m.CustomersPage })))
+const EmployeesPage = lazy(() => import('@/pages/EmployeesPage').then((m) => ({ default: m.EmployeesPage })))
+const SuppliersPage = lazy(() => import('@/pages/SuppliersPage').then((m) => ({ default: m.SuppliersPage })))
+const RoutePlanningPage = lazy(() => import('@/pages/RoutePlanningPage').then((m) => ({ default: m.RoutePlanningPage })))
+const StockCallPage = lazy(() => import('@/pages/StockCallPage').then((m) => ({ default: m.StockCallPage })))
+const BarcodeTrackerPage = lazy(() => import('@/pages/BarcodeTrackerPage').then((m) => ({ default: m.BarcodeTrackerPage })))
+
+function PageLoading() {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+    </div>
+  )
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -64,6 +76,7 @@ function AppRoutes() {
   }
 
   return (
+    <Suspense fallback={<PageLoading />}>
     <Routes>
       <Route path="/login" element={<Navigate to="/" replace />} />
       <Route
@@ -178,6 +191,7 @@ function AppRoutes() {
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
   )
 }
 
