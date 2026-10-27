@@ -34,7 +34,11 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 1000 * 30,
-      retry: 1,
+      // Backend tự host qua Cloudflare Tunnel đôi khi có độ trễ "đánh thức" ngay
+      // sau khi load trang — thử lại vài lần với backoff thay vì bỏ cuộc ngay,
+      // tránh hiện số liệu 0 sai lệch và phải F5 thủ công nhiều lần.
+      retry: 3,
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10000),
     },
   },
 })

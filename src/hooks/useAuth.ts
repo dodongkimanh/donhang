@@ -4,13 +4,22 @@ import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/authStore'
 import type { Profile } from '@/types'
 
-async function fetchProfile(userId: string) {
+// Backend tự host qua Cloudflare Tunnel đôi khi có độ trễ "đánh thức" ngay sau
+// khi load trang — thử lại vài lần trước khi chấp nhận profile = null, tránh
+// việc người dùng phải F5 thủ công nhiều lần mới đăng nhập/tải dữ liệu được.
+async function fetchProfile(userId: string, attempt = 0): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
     .eq('user_id', userId)
     .single()
-  if (error) console.error('fetchProfile error:', error.message)
+  if (error) {
+    console.error('fetchProfile error:', error.message)
+    if (attempt < 2) {
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt))
+      return fetchProfile(userId, attempt + 1)
+    }
+  }
   return (data ?? null) as Profile | null
 }
 
