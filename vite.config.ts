@@ -71,9 +71,16 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // SW mới chiếm quyền kiểm soát tab đang mở ngay khi kích hoạt, và dọn
+        // sạch cache cũ — tránh tình trạng tab giữ bản SW/asset cũ sau deploy,
+        // trỏ tới file JS đã bị xoá (hash đổi) khiến phải F5 nhiều lần.
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
+            // Khớp cả Supabase Cloud (nếu còn dùng) lẫn API tự host qua
+            // Cloudflare Tunnel (api-donhang.donhangkimanh.io.vn)
+            urlPattern: /^https:\/\/(.*\.supabase\.co|api-donhang\.donhangkimanh\.io\.vn)\/.*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'supabase-api',

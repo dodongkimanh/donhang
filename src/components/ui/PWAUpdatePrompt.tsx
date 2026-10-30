@@ -1,26 +1,18 @@
+import { useEffect } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
-import { RefreshCw } from 'lucide-react'
 
+// Tự động áp dụng bản cập nhật ngay khi phát hiện, thay vì chờ người dùng
+// bấm nút — trước đây nếu người dùng bỏ qua banner, họ bị kẹt ở bản cũ và
+// phải tự F5 nhiều lần mới "trúng" bản mới.
 export default function PWAUpdatePrompt() {
   const {
     needRefresh: [needRefresh],
     updateServiceWorker,
   } = useRegisterSW()
 
-  if (!needRefresh) return null
+  useEffect(() => {
+    if (needRefresh) updateServiceWorker(true)
+  }, [needRefresh, updateServiceWorker])
 
-  return (
-    <div className="fixed bottom-4 left-4 right-4 z-50 mx-auto max-w-sm rounded-lg bg-blue-600 p-4 text-white shadow-lg sm:left-auto sm:right-4">
-      <div className="flex items-center gap-3">
-        <RefreshCw className="h-5 w-5 flex-shrink-0" />
-        <p className="flex-1 text-sm">Có bản cập nhật mới!</p>
-        <button
-          onClick={() => updateServiceWorker(true)}
-          className="rounded-md bg-white px-3 py-1 text-sm font-medium text-blue-600 hover:bg-blue-50"
-        >
-          Cập nhật
-        </button>
-      </div>
-    </div>
-  )
+  return null
 }
